@@ -111,7 +111,7 @@ updateLocationPath segment location =
 
 parsePath : String -> List String
 parsePath url =
- List.filter String.isEmpty <| String.split "/" url
+ List.filter (not << String.isEmpty) <| String.split "/" url
 
 
 parseQuery : String -> Dict.Dict String (List String)
