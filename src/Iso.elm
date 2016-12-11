@@ -2,7 +2,7 @@ module Iso exposing
   ( Iso
   , iso, apply, unapply, invert
   , identity, (<<<), (>>>)
-  , liftMaybe, liftList
+  , (***), liftMaybe, liftList
   , ignore, element, subset
   , string, int
   )
@@ -18,8 +18,8 @@ value.
 # Category
 @docs identity, (<<<), (>>>)
 
-# Applicative
-@docs liftMaybe, liftList
+# Lifting to Type Constructors
+@docs (***), liftMaybe, liftList
 
 # Combinators
 @docs ignore, element, subset
@@ -89,7 +89,17 @@ infixl 9 >>>
 
 
 
--- APPLICATIVE
+-- LIFTING TO TYPE CONSTRUCTORS
+
+{-| Combine two separate isomorphisms to work on the two components
+of a tuple.
+-}
+(***) : Iso a c -> Iso b d -> Iso (a, b) (c, d)
+(***) fst snd =
+  Iso
+    (\(a, b) -> Maybe.map2 (,) (apply fst a) (apply snd b))
+    (\(c, d) -> Maybe.map2 (,) (unapply fst c) (unapply snd d))
+
 
 {-| Lift an isomorphism over `Maybe`. The new isomorphism fails if and
 only if the base one does.
@@ -132,8 +142,8 @@ ignore x =
   Iso (always <| Just ()) (always <| Just x)
 
 
-{-| `element x` is the partial isomorphism between singleton set
-which contains just `x` and `()`.
+{-| `element x` is the partial isomorphism between the singleton set
+which contains only `x` and `()`.
 -}
 element : a -> Iso a ()
 element x =
