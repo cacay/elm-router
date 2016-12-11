@@ -29,7 +29,7 @@ module Printer exposing
 import Dict
 import Maybe.Extra
 
-import Iso exposing (Iso, apply, unapply)
+import Iso exposing (Iso, unapply)
 import UrlSegment exposing (Segment, merge)
 
 

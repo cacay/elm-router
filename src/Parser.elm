@@ -28,8 +28,8 @@ module Parser exposing
 
 import Dict
 
-import Iso exposing (Iso, apply, unapply)
-import UrlSegment exposing (Segment, merge)
+import Iso exposing (Iso, apply)
+import UrlSegment exposing (Segment)
 
 
 -- PARSER
