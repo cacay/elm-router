@@ -3,7 +3,7 @@ module UrlParser exposing
   , string, int, s, custom
   , (</>), oneOf, top
   , (<$>), cons0, cons1, cons2, cons3, cons4, cons5
-  , QueryParser, (<?>), stringParam, intParam
+  , (<?>), stringParam, intParam
   , customParam, requiredParam, optionalParam, manyParam
   , parse, reverse
   )
@@ -25,7 +25,7 @@ Reversible URL parsers.
 @docs (<$>), cons0, cons1, cons2, cons3, cons4, cons5
 
 # Query Parameter Parsers
-@docs QueryParser, (<?>), stringParam, intParam
+@docs (<?>), stringParam, intParam
 @docs customParam, requiredParam, optionalParam, manyParam
 
 # Run a Parser
@@ -149,16 +149,32 @@ infixr 7 </>
       | User String
       | Comment String Int
 
+    -- First, define the projection functions. You can think of
+    -- these as the opposite of constructors.
+    rSearch : Route -> Maybe String
+    rSearch route =
+      case route of
+        Search s ->
+          Just s
+
+        _ ->
+          Nothing
+
+    -- Similar to `rSearch`.
+    rBlog : Route -> Maybe String
+    rUser : Route -> Maybe String
+    rComment : Route -> Maybe (String, Int)
+
     route : Parser (Route -> a) a
     route =
       oneOf
-        [ map Search  (s "search" </> string)
-        , map Blog    (s "blog" </> int)
-        , map User    (s "user" </> string)
-        , map Comment (s "user" </> string </> "comments" </> int)
+        [ cons1 Search rSearch   <$> s "search" </> string
+        , cons1 Blog rBlog       <$> s "blog" </> int
+        , cons1 User rUser       <$> s "user" </> string
+        , cons2 Comment rComment <$> s "user" </> string </> "comments" </> int
         ]
 
-    parsePath route location
+    parse route location
     -- /search/cats           ==>  Just (Search "cats")
     -- /search/               ==>  Nothing
 
@@ -173,11 +189,11 @@ infixr 7 </>
 -}
 oneOf : List (Parser a b) -> Parser a b
 oneOf =
-  List.foldl ParserPrinter.alternative ParserPrinter.empty
+  List.foldr ParserPrinter.alternative ParserPrinter.empty
 
 
 {-| A parser that does not consume any path segments.
-You could use it to define optional parsers for example:
+You could use it to define optional parsers, for example.
 
     parse (oneOf [ s "blog", top ] </> int) location
     -- /blog/42  ==>  Just 42
@@ -188,29 +204,6 @@ top =
   ParserPrinter.identity
 
 
--- TODO: fix comments.
-{-| Transform the result of a parser.
-
-    type alias Comment = { author : String, id : Int }
-
-    rawComment : Parser (String -> Int -> a) a
-    rawComment =
-      s "user" </> string </> s "comments" </> int
-
-    comment : Parser (Comment -> a) a
-    comment =
-      map Comment rawComment
-
-    parsePath comment location
-    -- /user/bob/comments/42  ==>  Just { author = "bob", id = 42 }
-    -- /user/tom/comments/35  ==>  Just { author = "tom", id = 35 }
-    -- /user/sam/             ==>  Nothing
--}
-map : Iso b c -> Parser a b -> Parser a c
-map =
-  ParserPrinter.map
-
-
 
 -- DATA TYPES
 
@@ -219,41 +212,27 @@ You will usually use this with data constructors. For example:
 
     type Route = Search String | User String Int
 
+    -- Projections
     rSearch : Route -> Maybe String
-    rSearch route =
-      case route of
-        Search s ->
-          Just s
-
-        _ ->
-          Nothing
-
     rUser : Route -> Maybe (String, Int)
-    rUser route =
-      case route of
-        User s i ->
-          Just (s, i)
-
-        _ ->
-          Nothing
 
     route : Parser a (Route, a)
     route =
       oneOf
         [ cons1 Search rSearch <$> s "search" </> string
-        , cons2 User rUser <$> s "user" </> string </> int
+        , cons2 User rUser     <$> s "user" </> string </> int
         ]
 
 Under the hood, this is just `(</>)` with the arguments flipped, which
 means it can be used with any parser (even impure ones). This looks nicer
-though, especially since `(</>)` implies a forward slash.
+though since you can put the constructor first and `(</>)` implies a
+forward slash.
 -}
 (<$>) : Parser b c -> Parser a b -> Parser a c
 (<$>) =
   flip (</>)
 
-
-infixr 6 <$>
+infixr 7 <$>
 
 
 {-| A constructor with no arguments.
@@ -306,25 +285,19 @@ cons5 inj proj =
 -- QUERY PARAMETERS
 
 
-{-| Turn query parameters like `?name=tom&age=42` into nice Elm data. Just an alias for
-`Parser`.
--}
--- TODO: should we bother with an alias? Could be important for precedence or readability.
--- Should we turn it into concrete data instead of an alias?
-type alias QueryParser a b =
-  Parser a b
-
-
--- TODO: fix example
 {-| Parse some query parameters. Just a nicer looking alias for `</>`.
 
     type Route = BlogList (Maybe String) | BlogPost Int
 
+    -- Projections
+    rBlogList : Route -> Maybe (Maybe String)
+    rBlogPost : Route -> Maybe Int
+
     route : Parser Route
     route =
       oneOf
-        [ map BlogList (s "blog" <?> stringParam "search")
-        , map BlogPost (s "blog" </> int)
+        [ cons1 BlogList rBlogList <$> s "blog" <?> stringParam "search"
+        , cons1 BlogPost rBlogPost <$> s "blog" </> int
         ]
 
     parse route location
@@ -332,11 +305,11 @@ type alias QueryParser a b =
     -- /blog/?search=cats  ==>  Just (BlogList (Just "cats"))
     -- /blog/42            ==>  Just (BlogPost 42)
 -}
-(<?>) : Parser a b -> QueryParser b c -> Parser a c
+(<?>) : Parser a b -> Parser b c -> Parser a c
 (<?>) =
   (</>)
 
-infixr 8 <?>
+infixr 7 <?>
 
 
 {-| Parse a query parameter as a `String`.
@@ -345,7 +318,7 @@ infixr 8 <?>
     -- /blog/              ==>  Just Nothing
     -- /blog/?search=cats  ==>  Just (Just "cats")
 -}
-stringParam : String -> QueryParser a (Maybe String, a)
+stringParam : String -> Parser a (Maybe String, a)
 stringParam name =
   optionalParam name Iso.string
 
@@ -358,7 +331,7 @@ should appear first.
     -- /results           ==>  Just Nothing
     -- /results?start=10  ==>  Just (Just 10)
 -}
-intParam : String -> QueryParser a (Maybe Int, a)
+intParam : String -> Parser a (Maybe Int, a)
 intParam name =
   optionalParam name Iso.int
 
@@ -367,7 +340,7 @@ intParam name =
 the given key since the same parameter can appear multiple times.
 If it isn't in the parameter list, you will get an empty list.
 -}
-customParam : String -> (Iso (List String) a) -> QueryParser r (a, r)
+customParam : String -> (Iso (List String) a) -> Parser r (a, r)
 customParam name iso =
   Combinators.mapHead iso <| ParserPrinter.query name
 
@@ -375,7 +348,7 @@ customParam name iso =
 {-| Parse a query parameter that is given exactly once. The parser fails
 if the parameter is not given or given more than once.
 -}
-requiredParam : String -> (Iso String a) -> QueryParser r (a, r)
+requiredParam : String -> (Iso String a) -> Parser r (a, r)
 requiredParam name iso =
   let
     matchSingleton : List c -> Maybe c
@@ -406,7 +379,7 @@ parameter parsers are all built with this:
     intParam =
       optionalParam name Iso.int
 -}
-optionalParam : String -> (Iso String a) -> QueryParser r (Maybe a, r)
+optionalParam : String -> (Iso String a) -> Parser r (Maybe a, r)
 optionalParam name iso =
   let
     matchSingleton : List c -> Maybe (Maybe c)
@@ -436,7 +409,7 @@ parser fails. Otherwise, you get a list of parsed values. For example:
     parse (s "posts" </> manyParam "user" Iso.int) location
     -- /posts?user=1&user=2  ==>  Just [1, 2]
 -}
-manyParam : String -> (Iso String a) -> QueryParser r (List a, r)
+manyParam : String -> (Iso String a) -> Parser r (List a, r)
 manyParam name iso =
   customParam name (Iso.liftList iso)
 
@@ -454,7 +427,7 @@ parse p seg =
 
 {-| Print a `UrlSegment.Segment` given an Elm value.
 -}
-reverse : Parser () a -> a -> Maybe UrlSegment.Segment
-reverse =
-  ParserPrinter.print
+reverse : Parser () (a, ()) -> a -> Maybe UrlSegment.Segment
+reverse p x =
+  ParserPrinter.print p (x, ())
 

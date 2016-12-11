@@ -114,3 +114,4 @@ print (Printer p) a =
   p { segment = UrlSegment.empty, value = a }
     |> List.head
     |> Maybe.map .segment
+
