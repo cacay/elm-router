@@ -447,9 +447,9 @@ manyParam name iso =
 
 {-| Parse a `UrlSegment.Segment` into an Elm value.
 -}
-parse : Parser () a -> UrlSegment.Segment -> Maybe a
-parse =
-  ParserPrinter.parse
+parse : Parser () (a, ()) -> UrlSegment.Segment -> Maybe a
+parse p seg =
+  ParserPrinter.parse p seg |> Maybe.map Tuple.first
 
 
 {-| Print a `UrlSegment.Segment` given an Elm value.
