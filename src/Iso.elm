@@ -8,6 +8,9 @@ module Iso exposing
   )
 
 {-|
+Partial isomorphisms between types. These are like functions,
+but they go in both directions, and they might fail to produce a
+value.
 
 # Partial Isomorphisms
 @docs Iso, iso, apply, unapply, invert
