@@ -1,6 +1,8 @@
 module UrlParser exposing
-  ( Parser, string, int, s
-  , (</>), (<$>), oneOf, top, custom
+  ( Parser
+  , string, int, s, custom
+  , (</>), oneOf, top
+  , (<$>), cons0, cons1, cons2, cons3, cons4, cons5
   , QueryParser, (<?>), stringParam, intParam
   , customParam, requiredParam, optionalParam, manyParam
   , parse, reverse
@@ -8,11 +10,19 @@ module UrlParser exposing
 
 {-|
 
-# Primitives
-@docs Parser, string, int, s
+Reversible URL parsers.
 
-# Path Parses
-@docs (</>), (<$>), oneOf, top, custom
+# Parser
+@docs Parser
+
+# Path Parsers
+@docs string, int, s, custom
+
+# Combining Parses
+@docs (</>), oneOf, top
+
+# Data Constructors
+@docs (<$>), cons0, cons1, cons2, cons3, cons4, cons5
 
 # Query Parameter Parsers
 @docs QueryParser, (<?>), stringParam, intParam
@@ -37,7 +47,10 @@ import UrlSegment
 -- PARSERS
 
 
-{-| Turn URLs like `/blog/42/cat-herding-techniques` into nice Elm data.
+{-| Turn URLs like `/blog/42/cat-herding-techniques` into nice Elm data and back.
+Intuitively, a `Parser a b` takes an `a` to parse a url segment (see `UrlSegment`)
+and results in a `b` if parsing succeeds. Additionally, it takes a `b` to print a
+segment and returns a `a` if printing succeeds.
 -}
 type alias Parser a b =
   ParserPrinter.ParserPrinter a b
@@ -81,8 +94,9 @@ s str =
   Combinators.pop (Iso.element str) <$> ParserPrinter.path
 
 
-{-| Create a custom path segment parser. Here is how it is used to define the
-`int` and `string` parsers:
+{-| Create a custom path segment parser. You need to provide a partial
+isomorphism between `String` and your type (see `Iso`). Here is how it
+is used to define the `int` and `string` parsers:
 
     int =
       custom Iso.int
@@ -94,7 +108,7 @@ You can use it to define something like “only CSS files” like this:
 
     css : Parser String
     css =
-      custom <| Iso.restrict <| String.endsWith ".css"
+      custom <| Iso.subset <| String.endsWith ".css"
 -}
 custom : Iso String a -> Parser r (a, r)
 custom iso =
@@ -123,42 +137,7 @@ custom iso =
 (</>) =
   flip ParserPrinter.compose
 
-
-{-| Combine a pure parser with a parser that consumes input.
-In fact, this is just `(</>)` with the arguments flipped and can
-be used with any parser, but is less confusing since `(</>)` implies
-a separator.
--}
-(<$>) : Parser b c -> Parser a b -> Parser a c
-(<$>) =
-  flip (</>)
-
-
 infixr 7 </>
-infixr 6 <$>
-
-
--- TODO: fix comments.
-{-| Transform the result of a parser.
-
-    type alias Comment = { author : String, id : Int }
-
-    rawComment : Parser (String -> Int -> a) a
-    rawComment =
-      s "user" </> string </> s "comments" </> int
-
-    comment : Parser (Comment -> a) a
-    comment =
-      map Comment rawComment
-
-    parsePath comment location
-    -- /user/bob/comments/42  ==>  Just { author = "bob", id = 42 }
-    -- /user/tom/comments/35  ==>  Just { author = "tom", id = 35 }
-    -- /user/sam/             ==>  Nothing
--}
-map : Iso b c -> Parser a b -> Parser a c
-map =
-  ParserPrinter.map
 
 
 -- TODO: fix comments.
@@ -198,27 +177,84 @@ oneOf =
 
 
 {-| A parser that does not consume any path segments.
+You could use it to define optional parsers for example:
 
-    type BlogRoute = Overview | Post Int
-
-    blogRoute : Parser (BlogRoute -> a) a
-    blogRoute =
-      oneOf
-        [ map Overview top
-        , map Post  (s "post" </> int)
-        ]
-
-    parsePath (s "blog" </> blogRoute) location
-    -- /blog/         ==>  Just Overview
-    -- /blog/post/42  ==>  Just (Post 42)
+    parse (oneOf [ s "blog", top ] </> int) location
+    -- /blog/42  ==>  Just 42
+    -- /42       ==>  Just 42
 -}
 top : Parser a a
 top =
   ParserPrinter.identity
 
 
+-- TODO: fix comments.
+{-| Transform the result of a parser.
+
+    type alias Comment = { author : String, id : Int }
+
+    rawComment : Parser (String -> Int -> a) a
+    rawComment =
+      s "user" </> string </> s "comments" </> int
+
+    comment : Parser (Comment -> a) a
+    comment =
+      map Comment rawComment
+
+    parsePath comment location
+    -- /user/bob/comments/42  ==>  Just { author = "bob", id = 42 }
+    -- /user/tom/comments/35  ==>  Just { author = "tom", id = 35 }
+    -- /user/sam/             ==>  Nothing
+-}
+map : Iso b c -> Parser a b -> Parser a c
+map =
+  ParserPrinter.map
+
+
 
 -- DATA TYPES
+
+{-| Combine a pure parser with a parser that consumes input.
+You will usually use this with data constructors. For example:
+
+    type Route = Search String | User String Int
+
+    rSearch : Route -> Maybe String
+    rSearch route =
+      case route of
+        Search s ->
+          Just s
+
+        _ ->
+          Nothing
+
+    rUser : Route -> Maybe (String, Int)
+    rUser route =
+      case route of
+        User s i ->
+          Just (s, i)
+
+        _ ->
+          Nothing
+
+    route : Parser a (Route, a)
+    route =
+      oneOf
+        [ cons1 Search rSearch <$> s "search" </> string
+        , cons2 User rUser <$> s "user" </> string </> int
+        ]
+
+Under the hood, this is just `(</>)` with the arguments flipped, which
+means it can be used with any parser (even impure ones). This looks nicer
+though, especially since `(</>)` implies a forward slash.
+-}
+(<$>) : Parser b c -> Parser a b -> Parser a c
+(<$>) =
+  flip (</>)
+
+
+infixr 6 <$>
+
 
 {-| A constructor with no arguments.
 -}
@@ -361,7 +397,14 @@ requiredParam name iso =
 {-| Parse a query parameter that is given at most once. If the parameter is
 missing, you get `Nothing`. If it occurs more than once, the parser fails.
 
-This is usually what you want to use for parameters.
+This is usually what you want to use for parameters. In fact, the primitive
+parameter parsers are all built with this:
+
+    stringParam =
+      optionalParam name Iso.string
+
+    intParam =
+      optionalParam name Iso.int
 -}
 optionalParam : String -> (Iso String a) -> QueryParser r (Maybe a, r)
 optionalParam name iso =
@@ -385,7 +428,13 @@ optionalParam name iso =
     customParam name (Iso.liftMaybe iso <<< one)
 
 
-{-| Parse a query parameter that is given 0 or more times.
+{-| Parse a query parameter that is given 0 or more times. You need
+to provide an isomorphism for the base type. It will be applied to
+each occurrence of the query parameter. If any of them fails, the whole
+parser fails. Otherwise, you get a list of parsed values. For example:
+
+    parse (s "posts" </> manyParam "user" Iso.int) location
+    -- /posts?user=1&user=2  ==>  Just [1, 2]
 -}
 manyParam : String -> (Iso String a) -> QueryParser r (List a, r)
 manyParam name iso =
@@ -396,14 +445,14 @@ manyParam name iso =
 -- RUN A PARSER
 
 
-{-| Parse a `UrlSegment.Segment`.
+{-| Parse a `UrlSegment.Segment` into an Elm value.
 -}
 parse : Parser () a -> UrlSegment.Segment -> Maybe a
 parse =
   ParserPrinter.parse
 
 
-{-| Print a `UrlSegment.Segment`.
+{-| Print a `UrlSegment.Segment` given an Elm value.
 -}
 reverse : Parser () a -> a -> Maybe UrlSegment.Segment
 reverse =
