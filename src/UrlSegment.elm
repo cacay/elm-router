@@ -19,8 +19,9 @@ module UrlSegment exposing
 
 
 import Dict
-import Http
 import Maybe.Extra
+
+import Erl
 import Navigation exposing (Location)
 
 
@@ -65,12 +66,12 @@ and `search` components of a `Navigation.Location`.
 -}
 fromPath : String -> Segment
 fromPath url =
-  case String.split "?" url of
-    [path, query] ->
-      Segment (parsePath path) (parseQuery query)
-
-    _ ->
-      Segment (parsePath url) Dict.empty
+  let
+    parsed = Erl.parse url
+  in
+    { path = parsed.path
+    , query = List.foldr (\(k, v) -> insertWith (++) k [v]) Dict.empty parsed.query
+    }
 
 
 {-| Convert to a `String`. The string will look like the concatenation of
@@ -79,68 +80,34 @@ fromPath url =
 toPath : Segment -> String
 toPath segment =
   let
-    path = String.cons '/' <| printPath segment.path
-    query = printQuery segment.query
+    splitQuery : List (String, String)
+    splitQuery =
+      segment.query
+        |> Dict.toList
+        |> List.concatMap (\(k, values) -> List.map (\v -> (k, v)) values)
   in
-    if query == "" then
-      path
-    else
-      path ++ "?" ++ query
+    Erl.new
+      |> Erl.appendPathSegments segment.path
+      |> \erl -> { erl | query = splitQuery }
+      |> Erl.toString
 
 
 {-| Convert from the `path` and `search` components of a `Navigation.Location`.
 -}
 fromLocationPath : Location -> Segment
 fromLocationPath location =
-  Segment (parsePath location.pathname) (location.search |> String.dropLeft 1 |> parseQuery)
+  fromPath (location.pathname ++ location.search)
 
 
 {-| Replace the `path` and `search` components of a `Navigation.Location`.
 -}
 updateLocationPath : Segment -> Location -> Location
 updateLocationPath segment location =
-  { location
-  | pathname = String.cons '/' <| printPath segment.path
-  , search = String.cons '?' <| printQuery segment.query
-  }
-
-
-
--- PARSER HELPERS
-
-
-parsePath : String -> List String
-parsePath url =
- List.filter (not << String.isEmpty) <| String.split "/" url
-
-
-parseQuery : String -> Dict.Dict String (List String)
-parseQuery queryString =
-  queryString
-    |> String.split "&"
-    |> List.filterMap toKeyValuePair
-    |> List.foldr (\(k, v) -> insertWith (++) k [v]) Dict.empty
-
-
-toKeyValuePair : String -> Maybe (String, String)
-toKeyValuePair segment =
-  case String.split "=" segment of
-    [key, value] ->
-      Maybe.map2 (,) (Http.decodeUri key) (Http.decodeUri value)
-
-    _ ->
-      Nothing
-
-
-printPath : List String -> String
-printPath path =
-  String.join "/" path
-
-
-printQuery : Dict.Dict String (List String) -> String
-printQuery query =
-  Dict.toList query
-    |> List.concatMap (\(k, values) -> List.map (\v -> (k, v)) values)
-    |> List.map (\(k, v) -> Http.encodeUri k ++ "=" ++ Http.encodeUri v)
-    |> String.join "&"
+  let
+    printed = toPath segment
+  in
+    { location
+    | pathname = Erl.extractPath printed
+    , search = Erl.extractQuery printed
+    }
 
