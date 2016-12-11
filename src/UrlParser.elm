@@ -10,7 +10,7 @@ module UrlParser exposing
 
 {-|
 
-Reversible URL parsers.
+A reversible URL parser.
 
 # Parser
 @docs Parser
@@ -30,6 +30,14 @@ Reversible URL parsers.
 
 # Run a Parser
 @docs parse, reverse
+
+
+# Credits
+
+The interface is heavily influenced by
+[evancz/url-parser](http://package.elm-lang.org/packages/evancz/url-parser/2.0.1).
+The implementation is based on [Boomerang](https://hackage.haskell.org/package/boomerang-1.4.5.2)
+and [this paper](http://www.informatik.uni-marburg.de/~rendel/unparse/rendel10invertible.pdf).
 
 -}
 
