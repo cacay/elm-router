@@ -1,27 +1,28 @@
 module Parser exposing
   ( Parser
-  , parse
+  , identity, compose
+  , empty, alternative
   , map
-  , product
-  , alternative
-  , empty
-  , pure
-  , path
-  , query
+  , path, query
+  , parse
   )
+
 {-|
 
-# Primitives
-@docs Parser, parse, pure, path, query
+# Parser
+@docs Parser, parse
 
-# IsoFunctor
-@docs map
-
-# ProductFunctor
-@docs product
+# Category
+@docs identity, compose
 
 # Alternative
-@docs alternative, empty
+@docs empty, alternative
+
+# Iso Functor
+@docs map
+
+# Url
+@docs path, query
 
 -}
 
@@ -29,78 +30,84 @@ module Parser exposing
 import Dict
 
 import Iso exposing (Iso, apply)
+import State exposing (State)
 import UrlSegment exposing (Segment)
 
 
 -- PARSER
 
-type Parser a =
-  Parser (Segment -> List (a, Segment))
+{-| A `Parser a b` takes an `a` to parse a `Segment` and results
+in a `b` if parsing succeeds.
+-}
+type Parser a b =
+  Parser (State a -> List (State b))
 
 
 
--- ISO FUNCTOR
+-- CATEGORY
 
-map : Iso a b -> Parser a -> Parser b
-map iso (Parser p) =
-  Parser <| \seg ->
-    List.filterMap (\(a, seg_) -> Maybe.map (\b -> (b, seg_)) <| apply iso a) (p seg)
-
+identity : Parser a a
+identity =
+  Parser <| \state -> [state]
 
 
--- PRODUCT FUNCTOR
-
-product : Parser a -> Parser b -> Parser (a, b)
-product (Parser p) (Parser q) =
-  Parser <| \seg ->
-    List.concatMap (\(x, seg2) -> List.map (Tuple.mapFirst <| (,) x) <| q seg2) (p seg)
+compose : Parser b c -> Parser a b -> Parser a c
+compose (Parser p) (Parser q) =
+  Parser <| \state -> List.concatMap p (q state)
 
 
 
 -- ALTERNATIVE
 
-alternative : Parser a -> Parser a -> Parser a
-alternative (Parser p) (Parser q) =
-  Parser <| \seg -> p seg ++ q seg
-
-
-empty : Parser a
+empty : Parser a b
 empty =
   Parser <| always []
 
 
-
--- SYNTAX
-
-pure : a -> Parser a
-pure x =
-  Parser <| \seg -> [(x, seg)]
+alternative : Parser a b -> Parser a b -> Parser a b
+alternative (Parser p) (Parser q) =
+  Parser <| \state -> p state ++ q state
 
 
-path : Parser String
+
+-- ISO FUNCTOR
+
+map : Iso a b -> Parser r a -> Parser r b
+map iso (Parser p) =
+  Parser <| \state ->
+    p state |> List.filterMap (State.mapMaybe <| apply iso)
+
+
+
+-- URL
+
+path : Parser a (String, a)
 path =
-  Parser <| \seg ->
-    case seg.path of
+  Parser <| \{ segment, value } ->
+    case segment.path of
       [] ->
         []
 
       next :: rest ->
-        [(next, { seg | path = rest })]
+        [ { segment = { segment | path = rest }, value = (next, value) } ]
 
 
-query : String -> Parser (List String)
+query : String -> Parser a (List String, a)
 query key =
-  Parser <| \seg ->
-    [( Maybe.withDefault [] <| Dict.get key seg.query, seg )]
+  Parser <| \state ->
+    let
+      values = Maybe.withDefault [] <| Dict.get key state.segment.query
+    in
+      [ State.map (\a -> (values, a)) state ]
 
 
 
--- RUN A PARSER
+-- RUNNING
 
-parse : Parser a -> Segment -> Maybe a
+parse : Parser () a -> Segment -> Maybe a
 parse (Parser p) seg =
-  p seg
-    |> List.filter (Tuple.second >> .path >> List.isEmpty)
+  p { segment = seg, value = () }
+    |> List.filter (.segment >> .path >> List.isEmpty)
     |> List.head
-    |> Maybe.map Tuple.first
+    |> Maybe.map .value
 

@@ -1,6 +1,6 @@
 {
     "version": "1.0.0",
-    "summary": "An opinionated router",
+    "summary": "An opinionated router for Single Page Apps",
     "repository": "https://github.com/cacay/elm-router.git",
     "license": "MIT",
     "source-directories": [
@@ -8,8 +8,8 @@
     ],
     "exposed-modules": [
         "UrlParser",
-        "Iso",
-        "UrlSegment"
+        "UrlSegment",
+        "Iso"
     ],
     "dependencies": {
         "elm-lang/core": "5.0.0 <= v < 6.0.0",

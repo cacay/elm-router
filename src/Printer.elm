@@ -1,93 +1,116 @@
 module Printer exposing
   ( Printer
-  , print
+  , identity, compose
+  , empty, alternative
   , map
-  , product
-  , alternative
-  , empty
-  , pure
-  , path
-  , query
+  , path, query
+  , print
   )
+
 {-|
 
-# Primitives
-@docs Printer, print, pure, path, query
+# Printer
+@docs Printer, print
 
-# IsoFunctor
-@docs map
-
-# ProductFunctor
-@docs product
+# Category
+@docs identity, compose
 
 # Alternative
-@docs alternative, empty
+@docs empty, alternative
+
+# Iso Functor
+@docs map
+
+# Url
+@docs path, query
 
 -}
 
 
 import Dict
-import Maybe.Extra
 
 import Iso exposing (Iso, unapply)
+import State exposing (State)
 import UrlSegment exposing (Segment, merge)
 
 
 -- PRINTER
 
-type Printer a =
-  Printer (a -> Maybe Segment)
+{-| A `Printer a b` takes a `b` to print a `Segment` and results
+in an `a` if printing succeeds.
+-}
+type Printer a b =
+  Printer (State b -> List (State a))
 
 
--- ISO FUNCTOR
 
-map : Iso a b -> Printer a -> Printer b
-map iso (Printer p) =
-  Printer <| \b -> unapply iso b |> Maybe.andThen p
+-- CATEGORY
+
+identity : Printer a a
+identity =
+  Printer <| \state -> [state]
 
 
--- PRODUCT FUNCTOR
-
-product : Printer a -> Printer b -> Printer (a, b)
-product (Printer p) (Printer q) =
-  Printer <| \(x, y) -> Maybe.map2 merge (p x) (q y)
+compose : Printer b c -> Printer a b -> Printer a c
+compose (Printer p) (Printer q) =
+  Printer <| \state -> List.concatMap q (p state)
 
 
 
 -- ALTERNATIVE
 
-alternative : Printer a -> Printer a -> Printer a
-alternative (Printer p) (Printer q) =
-  Printer <| \a -> Maybe.Extra.or (p a) (q a)
-
-
-empty : Printer a
+empty : Printer a b
 empty =
-  Printer <| always Nothing
+  Printer <| always []
+
+
+alternative : Printer a b -> Printer a b -> Printer a b
+alternative (Printer p) (Printer q) =
+  Printer <| \state -> p state ++ q state
 
 
 
--- SYNTAX
+-- ISO FUNCTOR
 
-pure : a -> Printer a
-pure x =
-  Printer <| \y -> if x == y then Just UrlSegment.empty else Nothing
+map : Iso a b -> Printer r a -> Printer r b
+map iso (Printer p) =
+  Printer <| \state ->
+    case unapply iso state.value of
+      Nothing ->
+        []
+
+      Just a ->
+        p { state | value = a }
 
 
-path : Printer String
+
+-- URL
+
+path : Printer a (String, a)
 path =
-  Printer <| \s -> Just { path = [s], query = Dict.empty }
+  Printer <| \{ segment, value } ->
+    let
+      newSegment = { segment | path = Tuple.first value :: segment.path }
+    in
+      [ { segment = newSegment, value = Tuple.second value } ]
 
 
-query : String -> Printer (List String)
+query : String -> Printer a (List String, a)
 query key =
-  Printer <| \values -> Just { path = [], query = Dict.singleton key values }
+  Printer <| \{segment, value} ->
+    let
+      -- Note: we do a `Dict.insert` instead of a `UrlSegment.merge` (which does a deep union)
+      -- since that would lead to duplicates.
+      newSegment = { segment | query = Dict.insert key (Tuple.first value) segment.query }
+    in
+      [ { segment = newSegment, value = Tuple.second value } ]
 
 
 
--- RUN A PRINTER
+-- RUNNING
 
-print : Printer a -> a -> Maybe Segment
-print (Printer p) x =
-  p x
-
+print : Printer () a -> a -> Maybe Segment
+print (Printer p) a =
+  p { segment = UrlSegment.empty, value = a }
+    |> List.head
+    |> Maybe.map .segment

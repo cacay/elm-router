@@ -27,7 +27,8 @@ import Dict
 import Maybe.Extra
 
 import Iso exposing (Iso, (<<<), (>>>))
-import ParserPrinter
+import ParserPrinter as ParserPrinter
+import Combinators
 import UrlSegment
 
 
@@ -37,8 +38,8 @@ import UrlSegment
 
 {-| Turn URLs like `/blog/42/cat-herding-techniques` into nice Elm data.
 -}
-type alias Parser a =
-  ParserPrinter.ParserPrinter a
+type alias Parser a b =
+  ParserPrinter.ParserPrinter a b
 
 
 
@@ -52,7 +53,7 @@ type alias Parser a =
     -- /bob     ==>  Just "bob"
     -- /42/     ==>  Just "42"
 -}
-string : Parser String
+string : Parser a (String, a)
 string =
   custom Iso.string
 
@@ -64,7 +65,7 @@ string =
     -- /bob     ==>  Nothing
     -- /42/     ==>  Just 42
 -}
-int : Parser Int
+int : Parser a (Int, a)
 int =
   custom Iso.int
 
@@ -74,9 +75,9 @@ int =
     s "blog"  -- can parse /blog/
               -- but not /glob/ or /42/ or anything else
 -}
-s : String -> Parser ()
-s =
-  custom << Iso.element
+s : String -> Parser a a
+s str =
+  Combinators.pop Iso.identity <| custom <| Iso.element str
 
 
 {-| Create a custom path segment parser. Here is how it is used to define the
@@ -94,9 +95,9 @@ You can use it to define something like “only CSS files” like this:
     css =
       custom <| Iso.restrict <| String.endsWith ".css"
 -}
-custom : Iso String a -> Parser a
+custom : Iso String a -> Parser r (a, r)
 custom iso =
-  ParserPrinter.map iso ParserPrinter.path
+  Combinators.mapHead iso ParserPrinter.path
 
 
 
@@ -117,9 +118,9 @@ custom iso =
     -- /search/       ==>  Nothing
     -- /cats/         ==>  Nothing
 -}
-(</>) : Parser a -> Parser b -> Parser (a, b)
+(</>) : Parser a b -> Parser b c -> Parser a c
 (</>) =
-  ParserPrinter.product
+  flip ParserPrinter.compose
 
 
 infixr 7 </>
@@ -143,7 +144,7 @@ infixr 6 <$>
     -- /user/tom/comments/35  ==>  Just { author = "tom", id = 35 }
     -- /user/sam/             ==>  Nothing
 -}
-(<$>) : Iso a b -> Parser a -> Parser b
+(<$>) : Iso b c -> Parser a b -> Parser a c
 (<$>) =
   ParserPrinter.map
 
@@ -182,7 +183,7 @@ infixr 6 <$>
     -- /user/                 ==>  Nothing
 
 -}
-oneOf : List (Parser a) -> Parser a
+oneOf : List (Parser a b) -> Parser a b
 oneOf =
   List.foldl ParserPrinter.alternative ParserPrinter.empty
 
@@ -202,9 +203,9 @@ oneOf =
     -- /blog/         ==>  Just Overview
     -- /blog/post/42  ==>  Just (Post 42)
 -}
-top : Parser ()
+top : Parser a a
 top =
-  ParserPrinter.pure ()
+  ParserPrinter.identity
 
 
 
@@ -216,8 +217,8 @@ top =
 -}
 -- TODO: should we bother with an alias? Could be important for precedence or readability.
 -- Should we turn it into concrete data instead of an alias?
-type alias QueryParser a =
-  Parser a
+type alias QueryParser a b =
+  Parser a b
 
 
 -- TODO: fix example
@@ -237,7 +238,7 @@ type alias QueryParser a =
     -- /blog/?search=cats  ==>  Just (BlogList (Just "cats"))
     -- /blog/42            ==>  Just (BlogPost 42)
 -}
-(<?>) : Parser a -> QueryParser b -> Parser (a, b)
+(<?>) : Parser a b -> QueryParser b c -> Parser a c
 (<?>) =
   (</>)
 
@@ -250,7 +251,7 @@ infixr 8 <?>
     -- /blog/              ==>  Just Nothing
     -- /blog/?search=cats  ==>  Just (Just "cats")
 -}
-stringParam : String -> QueryParser (Maybe String)
+stringParam : String -> QueryParser a (Maybe String, a)
 stringParam name =
   optionalParam name Iso.string
 
@@ -263,7 +264,7 @@ should appear first.
     -- /results           ==>  Just Nothing
     -- /results?start=10  ==>  Just (Just 10)
 -}
-intParam : String -> QueryParser (Maybe Int)
+intParam : String -> QueryParser a (Maybe Int, a)
 intParam name =
   optionalParam name Iso.int
 
@@ -272,15 +273,15 @@ intParam name =
 the given key since the same parameter can appear multiple times.
 If it isn't in the parameter list, you will get an empty list.
 -}
-customParam : String -> (Iso (List String) a) -> QueryParser a
+customParam : String -> (Iso (List String) a) -> QueryParser r (a, r)
 customParam name iso =
-  ParserPrinter.map iso <| ParserPrinter.query name
+  Combinators.mapHead iso <| ParserPrinter.query name
 
 
 {-| Parse a query parameter that is given exactly once. The parser fails
 if the parameter is not given or given more than once.
 -}
-requiredParam : String -> (Iso String a) -> QueryParser a
+requiredParam : String -> (Iso String a) -> QueryParser r (a, r)
 requiredParam name iso =
   let
     matchSingleton : List c -> Maybe c
@@ -304,7 +305,7 @@ missing, you get `Nothing`. If it occurs more than once, the parser fails.
 
 This is usually what you want to use for parameters.
 -}
-optionalParam : String -> (Iso String a) -> QueryParser (Maybe a)
+optionalParam : String -> (Iso String a) -> QueryParser r (Maybe a, r)
 optionalParam name iso =
   let
     matchSingleton : List c -> Maybe (Maybe c)
@@ -328,7 +329,7 @@ optionalParam name iso =
 
 {-| Parse a query parameter that is given 0 or more times.
 -}
-manyParam : String -> (Iso String a) -> QueryParser (List a)
+manyParam : String -> (Iso String a) -> QueryParser r (List a, r)
 manyParam name iso =
   customParam name (Iso.liftList iso)
 
@@ -339,14 +340,14 @@ manyParam name iso =
 
 {-| Parse a `UrlSegment.Segment`.
 -}
-parse : Parser a -> UrlSegment.Segment -> Maybe a
+parse : Parser () a -> UrlSegment.Segment -> Maybe a
 parse =
   ParserPrinter.parse
 
 
 {-| Print a `UrlSegment.Segment`.
 -}
-reverse : Parser a -> a -> Maybe UrlSegment.Segment
+reverse : Parser () a -> a -> Maybe UrlSegment.Segment
 reverse =
   ParserPrinter.print
 
