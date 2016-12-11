@@ -24,9 +24,10 @@ module UrlParser exposing
 -}
 
 import Dict
+import Function.Extra
 import Maybe.Extra
 
-import Iso exposing (Iso, (<<<), (>>>))
+import Iso exposing (Iso, (<<<), (>>>), (***))
 import ParserPrinter as ParserPrinter
 import Combinators
 import UrlSegment
@@ -77,7 +78,7 @@ int =
 -}
 s : String -> Parser a a
 s str =
-  Combinators.pop Iso.identity <| custom <| Iso.element str
+  Combinators.pop (Iso.element str) <$> ParserPrinter.path
 
 
 {-| Create a custom path segment parser. Here is how it is used to define the
@@ -123,11 +124,22 @@ custom iso =
   flip ParserPrinter.compose
 
 
+{-| Combine a pure parser with a parser that consumes input.
+In fact, this is just `(</>)` with the arguments flipped and can
+be used with any parser, but is less confusing since `(</>)` implies
+a separator.
+-}
+(<$>) : Parser b c -> Parser a b -> Parser a c
+(<$>) =
+  flip (</>)
+
+
 infixr 7 </>
 infixr 6 <$>
 
 
-{-| Transform a path parser.
+-- TODO: fix comments.
+{-| Transform the result of a parser.
 
     type alias Comment = { author : String, id : Int }
 
@@ -144,12 +156,9 @@ infixr 6 <$>
     -- /user/tom/comments/35  ==>  Just { author = "tom", id = 35 }
     -- /user/sam/             ==>  Nothing
 -}
-(<$>) : Iso b c -> Parser a b -> Parser a c
-(<$>) =
+map : Iso b c -> Parser a b -> Parser a c
+map =
   ParserPrinter.map
-
-
--- TODO: shortcuts for constructors of different arity.
 
 
 -- TODO: fix comments.
@@ -206,6 +215,55 @@ oneOf =
 top : Parser a a
 top =
   ParserPrinter.identity
+
+
+
+-- DATA TYPES
+
+{-| A constructor with no arguments.
+-}
+cons0 : t -> Parser r (t, r)
+cons0 t =
+  Combinators.push <| Iso.invert <| Iso.element t
+
+
+{-| A constructor with one argument.
+-}
+cons1 : (a -> t) -> (t -> Maybe a) -> Parser (a, r) (t, r)
+cons1 inj proj =
+  Combinators.pure <| Iso.iso (inj >> Just) proj *** Iso.identity
+
+
+{-| A constructor with two arguments.
+-}
+cons2 : (a -> b -> t) -> (t -> Maybe (a, b)) -> Parser (a, (b, r)) (t, r)
+cons2 inj proj =
+  Combinators.pull2 </>
+    (Combinators.pure <| Iso.iso (uncurry inj >> Just) proj *** Iso.identity)
+
+
+{-| A constructor with three arguments.
+-}
+cons3 : (a -> b -> c -> t) -> (t -> Maybe (a, b, c)) -> Parser (a, (b, (c, r))) (t, r)
+cons3 inj proj =
+  Combinators.pull3 </>
+    (Combinators.pure <| Iso.iso (Function.Extra.uncurry3 inj >> Just) proj *** Iso.identity)
+
+
+{-| A constructor with four arguments.
+-}
+cons4 : (a -> b -> c -> d -> t) -> (t -> Maybe (a, b, c, d)) -> Parser (a, (b, (c, (d, r)))) (t, r)
+cons4 inj proj =
+  Combinators.pull4 </>
+    (Combinators.pure <| Iso.iso (Function.Extra.uncurry4 inj >> Just) proj *** Iso.identity)
+
+
+{-| A constructor with five arguments.
+-}
+cons5 : (a -> b -> c -> d -> e -> t) -> (t -> Maybe (a, b, c, d, e)) -> Parser (a, (b, (c, (d, (e, r))))) (t, r)
+cons5 inj proj =
+  Combinators.pull5 </>
+    (Combinators.pure <| Iso.iso (Function.Extra.uncurry5 inj >> Just) proj *** Iso.identity)
 
 
 

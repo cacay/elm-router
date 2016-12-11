@@ -2,7 +2,7 @@ module Iso exposing
   ( Iso
   , iso, apply, unapply, invert
   , identity, (<<<), (>>>)
-  , (***), liftMaybe, liftList
+  , (***), commute, associate, liftMaybe, liftList
   , ignore, element, subset
   , string, int
   )
@@ -19,7 +19,7 @@ value.
 @docs identity, (<<<), (>>>)
 
 # Lifting to Type Constructors
-@docs (***), liftMaybe, liftList
+@docs (***), commute, associate, liftMaybe, liftList
 
 # Combinators
 @docs ignore, element, subset
@@ -30,6 +30,7 @@ value.
 -}
 
 
+import Function.Extra
 import Maybe.Extra
 
 
@@ -99,6 +100,20 @@ of a tuple.
   Iso
     (\(a, b) -> Maybe.map2 (,) (apply fst a) (apply snd b))
     (\(c, d) -> Maybe.map2 (,) (unapply fst c) (unapply snd d))
+
+
+{-| Products commute.
+-}
+commute : Iso (a, b) (b, a)
+commute =
+  Iso (\(a, b) -> Just (b, a)) (\(b, a) -> Just (a, b))
+
+
+{-| Nested Products associate.
+-}
+associate : Iso (a, (b, c)) ((a, b), c)
+associate =
+  Iso (\(a, (b, c)) -> Just ((a, b), c)) (\((a, b), c) -> Just (a, (b, c)))
 
 
 {-| Lift an isomorphism over `Maybe`. The new isomorphism fails if and

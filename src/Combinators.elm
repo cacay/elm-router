@@ -2,8 +2,8 @@ module Combinators exposing
   ( dimap
   , mapHead
   , pure
-  , pop
-  , push
+  , pop, push
+  , pull2, pull3, pull4, pull5, pull6
   )
 
 {-|
@@ -14,6 +14,7 @@ Useful combinators for a `ParserPrinter`.
 
 # Argument stack
 @docs pop, push
+@docs pull2, pull3, pull4, pull5, pull6
 
 -}
 
@@ -51,24 +52,77 @@ pure iso =
 
 {-| Drop the argument at the top of the stack.
 -}
-pop : Iso a () -> P.ParserPrinter r (a, t) -> P.ParserPrinter r t
-pop iso p =
+pop : Iso h () -> P.ParserPrinter (h, t) t
+pop iso =
   let
     dropUnit : Iso ((), t) t
     dropUnit =
       Iso.iso (Tuple.second >> Just) ((,) () >> Just)
   in
-    mapHead iso p |> P.map dropUnit
+    pure (iso *** Iso.identity)
+      |> P.compose (pure dropUnit)
 
 
 {-| Add an argument to the stack without consuming any input.
 -}
-push : Iso () a -> P.ParserPrinter r t -> P.ParserPrinter r (a, t)
-push iso p =
+push : Iso () h -> P.ParserPrinter t (h, t)
+push iso =
   let
     addUnit : Iso t ((), t)
     addUnit =
       Iso.iso ((,) () >> Just) (Tuple.second >> Just)
   in
-    P.map addUnit p |> mapHead iso
+    pure addUnit
+      |> P.compose (pure <| iso *** Iso.identity)
+
+
+{-| Tuple up the top two arguments.
+-}
+pull2 : P.ParserPrinter (a, (b, r)) ((a, b), r)
+pull2 =
+  pure Iso.associate
+
+
+{-| Tuple up the top three arguments.
+-}
+pull3 : P.ParserPrinter (a, (b, (c, r))) ((a, b, c), r)
+pull3 =
+  pull2 |> P.compose
+    ( pure <| Iso.iso
+        (\((a, b), (c, r)) -> Just ((a, b, c), r))
+        (\((a, b, c), r) -> Just ((a, b), (c, r)))
+    )
+
+
+{-| Tuple up the top four arguments.
+-}
+pull4 : P.ParserPrinter (a, (b, (c, (d, r)))) ((a, b, c, d), r)
+pull4 =
+  pull3 |> P.compose
+    ( pure <| Iso.iso
+        (\((a, b, c), (d, r)) -> Just ((a, b, c, d), r))
+        (\((a, b, c, d), r) -> Just ((a, b, c), (d, r)))
+    )
+
+
+{-| Tuple up the top five arguments.
+-}
+pull5 : P.ParserPrinter (a, (b, (c, (d, (e, r))))) ((a, b, c, d, e), r)
+pull5 =
+  pull4 |> P.compose
+    ( pure <| Iso.iso
+        (\((a, b, c, d), (e, r)) -> Just ((a, b, c, d, e), r))
+        (\((a, b, c, d, e), r) -> Just ((a, b, c, d), (e, r)))
+    )
+
+
+{-| Tuple up the top six arguments.
+-}
+pull6 : P.ParserPrinter (a, (b, (c, (d, (e, (f, r)))))) ((a, b, c, d, e, f), r)
+pull6 =
+  pull5 |> P.compose
+    ( pure <| Iso.iso
+        (\((a, b, c, d, e), (f, r)) -> Just ((a, b, c, d, e, f), r))
+        (\((a, b, c, d, e, f), r) -> Just ((a, b, c, d, e), (f, r)))
+    )
 
