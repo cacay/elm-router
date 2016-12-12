@@ -31,8 +31,8 @@ Combines a parser and a printer. Essentially just a tuple under the hood.
 import Iso exposing (Iso)
 import UrlSegment exposing (Segment)
 
-import Parser as Parser
-import Printer as Printer
+import ParserPrinter.Parser as Parser
+import ParserPrinter.Printer as Printer
 
 
 -- PARSER/PRINTER

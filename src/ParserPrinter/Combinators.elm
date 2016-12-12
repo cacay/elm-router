@@ -1,4 +1,4 @@
-module Combinators exposing
+module ParserPrinter.Combinators exposing
   ( dimap
   , mapHead
   , pure

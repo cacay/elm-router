@@ -1,4 +1,4 @@
-module Parser exposing
+module ParserPrinter.Parser exposing
   ( Parser
   , identity, compose
   , empty, alternative
@@ -30,7 +30,7 @@ module Parser exposing
 import Dict
 
 import Iso exposing (Iso, apply)
-import State exposing (State)
+import ParserPrinter.State as State exposing (State)
 import UrlSegment exposing (Segment)
 
 

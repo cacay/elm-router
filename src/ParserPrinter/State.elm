@@ -1,4 +1,4 @@
-module State exposing
+module ParserPrinter.State exposing
   ( State
   , map
   , mapMaybe

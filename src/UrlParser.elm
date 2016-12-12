@@ -47,7 +47,7 @@ import Maybe.Extra
 
 import Iso exposing (Iso, (<<<), (>>>), (***))
 import ParserPrinter as ParserPrinter
-import Combinators
+import ParserPrinter.Combinators as Combinators
 import UrlSegment
 
 

@@ -1,4 +1,4 @@
-module Printer exposing
+module ParserPrinter.Printer exposing
   ( Printer
   , identity, compose
   , empty, alternative
@@ -30,7 +30,7 @@ module Printer exposing
 import Dict
 
 import Iso exposing (Iso, unapply)
-import State exposing (State)
+import ParserPrinter.State as State exposing (State)
 import UrlSegment exposing (Segment, merge)
 
 
