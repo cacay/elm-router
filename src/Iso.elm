@@ -135,8 +135,9 @@ associate =
     Iso (\( a, ( b, c ) ) -> Just ( ( a, b ), c )) (\( ( a, b ), c ) -> Just ( a, ( b, c ) ))
 
 
-{-| Lift an isomorphism over `Maybe`. The new isomorphism fails if and
-only if the base one does.
+{-| Lift an isomorphism over `Maybe`. The resulting isomorphism identifies `Nothing`
+with `Nothing`, and it identifies `Just a` with `Just b` if and only if `a` is
+isomorphic to `b` according to the provided isomorphism.
 -}
 liftMaybe : Iso a b -> Iso (Maybe a) (Maybe b)
 liftMaybe iso =
@@ -158,8 +159,8 @@ liftMaybe iso =
         Iso (applyMaybe <| apply iso) (applyMaybe <| unapply iso)
 
 
-{-| Lift an isomorphism over `List`. The new isomorphism fails when the base
-one fails for any element in the list.
+{-| Lift an isomorphism over `List`. `[a_1, a_2, ..., a_n]` will be isomorphic to
+`[b_1, b_2, ..., b_n]` if and only if `a_i` is isomorphic to `b_i` for each i.
 -}
 liftList : Iso a b -> Iso (List a) (List b)
 liftList iso =

@@ -3,6 +3,7 @@ module ParserPrinter.Combinators
         ( dimap
         , mapHead
         , pure
+        , pureHead
         , pop
         , push
         , pull2
@@ -16,7 +17,7 @@ module ParserPrinter.Combinators
 Useful combinators for a `ParserPrinter`.
 
 # Maps
-@docs dimap, mapHead, pure
+@docs dimap, mapHead, pure, pureHead
 
 # Argument stack
 @docs pop, push
@@ -45,11 +46,18 @@ mapHead iso p =
     P.map (iso *** Iso.identity) p
 
 
-{-| A `ParserPrinter` that does not consume any arguments.
+{-| A `ParserPrinter` that transforms its input without any effects.
 -}
 pure : Iso a b -> P.ParserPrinter a b
 pure iso =
     P.map iso P.identity
+
+
+{-| A `ParserPrinter` that transforms the head of its input without any effects.
+-}
+pureHead : Iso a b -> P.ParserPrinter ( a, r ) ( b, r )
+pureHead iso =
+    pure (iso *** Iso.identity)
 
 
 

@@ -22,8 +22,10 @@ module UrlParser
         , requiredParam
         , optionalParam
         , manyParam
+        , withDefault
         , parse
         , reverse
+        , defaultRoute
         )
 
 {-|
@@ -44,10 +46,10 @@ A reversible URL parser.
 
 # Query Parameter Parsers
 @docs (<?>), stringParam, intParam
-@docs customParam, requiredParam, optionalParam, manyParam
+@docs customParam, requiredParam, optionalParam, manyParam, withDefault
 
 # Run a Parser
-@docs parse, reverse
+@docs parse, reverse, defaultRoute
 
 
 # Credits
@@ -59,7 +61,6 @@ and [this paper](http://www.informatik.uni-marburg.de/~rendel/unparse/rendel10in
 
 -}
 
-import Dict
 import Function.Extra
 import Maybe.Extra
 import Iso exposing (Iso, (<<<), (>>>), (***))
@@ -257,7 +258,7 @@ forward slash.
 -}
 (<$>) : Parser b c -> Parser a b -> Parser a c
 (<$>) =
-    flip (</>)
+    ParserPrinter.compose
 infixr 7 <$>
 
 
@@ -272,39 +273,35 @@ cons0 t =
 -}
 cons1 : (a -> t) -> (t -> Maybe a) -> Parser ( a, r ) ( t, r )
 cons1 inj proj =
-    Combinators.pure <| Iso.iso (inj >> Just) proj *** Iso.identity
+    Combinators.pureHead <| Iso.iso (inj >> Just) proj
 
 
 {-| A constructor with two arguments.
 -}
 cons2 : (a -> b -> t) -> (t -> Maybe ( a, b )) -> Parser ( a, ( b, r ) ) ( t, r )
 cons2 inj proj =
-    Combinators.pull2
-        </> (Combinators.pure <| Iso.iso (uncurry inj >> Just) proj *** Iso.identity)
+    Combinators.pull2 </> Combinators.pureHead (Iso.iso (uncurry inj >> Just) proj)
 
 
 {-| A constructor with three arguments.
 -}
 cons3 : (a -> b -> c -> t) -> (t -> Maybe ( a, b, c )) -> Parser ( a, ( b, ( c, r ) ) ) ( t, r )
 cons3 inj proj =
-    Combinators.pull3
-        </> (Combinators.pure <| Iso.iso (Function.Extra.uncurry3 inj >> Just) proj *** Iso.identity)
+    Combinators.pull3 </> Combinators.pureHead (Iso.iso (Function.Extra.uncurry3 inj >> Just) proj)
 
 
 {-| A constructor with four arguments.
 -}
 cons4 : (a -> b -> c -> d -> t) -> (t -> Maybe ( a, b, c, d )) -> Parser ( a, ( b, ( c, ( d, r ) ) ) ) ( t, r )
 cons4 inj proj =
-    Combinators.pull4
-        </> (Combinators.pure <| Iso.iso (Function.Extra.uncurry4 inj >> Just) proj *** Iso.identity)
+    Combinators.pull4 </> Combinators.pureHead (Iso.iso (Function.Extra.uncurry4 inj >> Just) proj)
 
 
 {-| A constructor with five arguments.
 -}
 cons5 : (a -> b -> c -> d -> e -> t) -> (t -> Maybe ( a, b, c, d, e )) -> Parser ( a, ( b, ( c, ( d, ( e, r ) ) ) ) ) ( t, r )
 cons5 inj proj =
-    Combinators.pull5
-        </> (Combinators.pure <| Iso.iso (Function.Extra.uncurry5 inj >> Just) proj *** Iso.identity)
+    Combinators.pull5 </> Combinators.pureHead (Iso.iso (Function.Extra.uncurry5 inj >> Just) proj)
 
 
 
@@ -439,6 +436,24 @@ manyParam name iso =
     customParam name (Iso.liftList iso)
 
 
+{-| Provide a default value for an optional parameter. When reversing,
+no query parameter will be generated in the output URL if the value matches
+the default.
+-}
+withDefault : a -> Parser ( Maybe a, r ) ( a, r )
+withDefault default =
+    Combinators.pureHead <|
+        Iso.iso
+            (Maybe.withDefault default >> Just)
+            (\a ->
+                Just <|
+                    if a == default then
+                        Nothing
+                    else
+                        Just a
+            )
+
+
 
 -- RUN A PARSER
 
@@ -455,3 +470,10 @@ parse p seg =
 reverse : Parser () ( a, () ) -> a -> Maybe UrlSegment.Segment
 reverse p x =
     ParserPrinter.print p ( x, () )
+
+
+{-| The value of the parser on the empty segment.
+-}
+defaultRoute : Parser () ( route, () ) -> Maybe route
+defaultRoute p =
+    parse p UrlSegment.empty
