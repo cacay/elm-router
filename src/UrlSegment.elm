@@ -90,6 +90,7 @@ toPath segment =
       |> Erl.appendPathSegments segment.path
       |> \erl -> { erl | query = splitQuery }
       |> Erl.toString
+      |> String.cons '/'
 
 
 {-| Convert from the `path` and `search` components of a `Navigation.Location`.

@@ -62,28 +62,28 @@ segment =
         , describe "Printing"
             [ test "Top" <|
                 \() ->
-                    Expect.equal (UrlSegment.toPath UrlSegment.empty) ""
+                    Expect.equal (UrlSegment.toPath UrlSegment.empty) "/"
             , test "Only Path Segments" <|
                 \() ->
                     Expect.equal
                       (UrlSegment.toPath { path = ["seg1", "seg2"], query = Dict.empty })
-                      "seg1/seg2"
+                      "/seg1/seg2"
 
             , test "Only Query String" <|
                 \() ->
                     Expect.equal
                       (UrlSegment.toPath { path = [], query = Dict.fromList [("key", ["value"])] })
-                      "?key=value"
+                      "/?key=value"
             , test "Query String" <|
                 \() ->
                     Expect.equal
                       (UrlSegment.toPath { path = ["seg"], query = Dict.fromList [("key", ["value"])] })
-                      "seg?key=value"
+                      "/seg?key=value"
             , test "Multiple Occurrences" <|
                 \() ->
                     Expect.equal
                       (UrlSegment.toPath { path = ["seg"], query = Dict.fromList [("key", ["v1", "v2"])] })
-                      "seg?key=v1&key=v2"
+                      "/seg?key=v1&key=v2"
             ]
         ]
 
