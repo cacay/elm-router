@@ -3,18 +3,18 @@ module UrlRouter
         ( App
         , Program
         , program
-        , href
+        , Href
+        , ChangeRoute
         )
 
 {-| Create a `Program` that manages routing for you.
 
-@docs Program, program, App, href
+@docs Program, program, App, Href, ChangeRoute
 
 -}
 
 import Html exposing (Html, Attribute)
 import Html.Attributes as Attribute
-import Html.Events as Events
 import Json.Decode as Json
 import Navigation exposing (Location)
 import UrlParser
@@ -43,9 +43,9 @@ So, the "special" fields are the `router`, `errorRoute`, and the
 -}
 type alias App model route msg =
     { init : ( model, Cmd msg )
-    , update : msg -> model -> ( model, Cmd msg )
+    , update : ChangeRoute route msg -> msg -> model -> ( model, Cmd msg )
     , subscriptions : model -> Sub msg
-    , view : model -> route -> Html msg
+    , view : Href route msg -> model -> route -> Html msg
     , router : UrlParser.Parser () ( route, () )
     , errorRoute : route
     , newHistoryEntry : route -> route -> Bool
@@ -117,7 +117,7 @@ update app msg model =
         UserMsg userMsg ->
             let
                 ( newUserModel, userCmd ) =
-                    app.update userMsg model.userModel
+                    app.update (changeRoute app model.route) userMsg model.userModel
             in
                 ( { model | userModel = newUserModel }, Cmd.map UserMsg userCmd )
 
@@ -130,27 +130,11 @@ update app msg model =
                     ( { model | route = route }, cmd )
 
         NewRoute newRoute ->
-            let
-                url : String
-                url =
-                    case UrlParser.reverse app.router newRoute of
-                        Nothing ->
-                            Debug.crash <| reverseError newRoute
-
-                        Just segment ->
-                            UrlSegment.toPath segment
-
-                changeUrl : String -> Cmd a
-                changeUrl =
-                    if app.newHistoryEntry model.route newRoute then
-                        Navigation.newUrl
-                    else
-                        Navigation.modifyUrl
-            in
-                -- TODO: should we update route here? It will also be updated once
-                -- we get the NewUrl message that we just set off... Depending on the
-                -- order of events, one or the other is more correct.
-                ( { model | route = newRoute }, changeUrl url )
+            -- TODO: should we update route here? It will also be updated once
+            -- we get the NewUrl message that we just set off... Depending on the
+            -- order of events, one or the other could be more correct. But this way,
+            -- we only have one point of entry for route changes.
+            ( model, changeRoute app model.route newRoute )
 
         LinkClick url ->
             case UrlParser.parse app.router (UrlSegment.fromPath url) of
@@ -172,7 +156,7 @@ update app msg model =
 
 view : App model route msg -> Model model route -> Html (Msg msg route)
 view app model =
-    app.view model.userModel model.route
+    app.view (href app) model.userModel model.route
         |> Html.map UserMsg
 
 
@@ -217,14 +201,23 @@ subscriptions app model =
 -- HELPERS
 
 
-{-| Attach a link to a node that will look like an ordinary link to the browser.
+{-| Your `view` function should use this function to generate links (essentially
+`href` attributes) from routes. These will look like ordinary links to the browser.
 In general, the browser can display the target (unlike "links" added using `onClick`
 handlers), and all usual click actions (right-click, modifier+click etc.) will work
 as expected. Only clicks that cause navigation (e.g. left click without modifiers)
-will be caught and passed along to your app as a new route so that they don't cause
-a page reload.
+will be caught by `UrlRouter` and passed along to your app as a new route so that
+they don't cause a page reload.
+
+TODO: example
 -}
-href : App model route msg -> route -> List (Attribute a)
+type alias Href route msg =
+    route -> List (Attribute msg)
+
+
+{-| Generate an `href` from a `route`. See the description of `Href`.
+-}
+href : App model route msg -> Href route msg
 href app route =
     let
         href : String
@@ -239,6 +232,53 @@ href app route =
         [ Attribute.href href
         , Attribute.attribute "data-elm-router" "true"
         ]
+
+
+{-| Sometimes you need to change the current route programmatically, without
+the user clicking on any links. Your update function can use `ChangeRoute` to
+do that. For example, you might extend your `Msg` type with a new case and handle
+these in your update function:
+
+    type alias Route = String
+
+    type Msg = ChangeSearchQuery Route | ...
+
+    update : ChangeRoute -> Msg -> Model -> ( Model, Cmd Msg )
+    update changeRoute msg model =
+        case msg of
+            ChangeSearchQuery route ->
+                ( model, changeRoute route )
+
+            ...
+-}
+type alias ChangeRoute route msg =
+    route -> Cmd msg
+
+
+{-| Switch to the given route. We also need the old route so we can decide
+whether we want a new entry or modify the current one.
+-}
+changeRoute : App model route msg -> route -> ChangeRoute route mgs_
+changeRoute app oldRoute newRoute =
+    let
+        url : String
+        url =
+            case UrlParser.reverse app.router newRoute of
+                Nothing ->
+                    Debug.crash <| reverseError newRoute
+
+                Just segment ->
+                    UrlSegment.toPath segment
+
+        method : String -> Cmd a
+        method =
+            if app.newHistoryEntry oldRoute newRoute then
+                Navigation.newUrl
+            else
+                Navigation.modifyUrl
+    in
+        -- TODO: should we ignore if the routes are equal?
+        method url
 
 
 {-| Turn a location into a route. We also return a command in case we need to `normalize`
