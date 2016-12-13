@@ -1,7 +1,9 @@
-effect module LinkMonitor where { subscription = MySub } exposing
-  ( Url
-  , clicks
-  )
+effect module LinkMonitor
+    where { subscription = MySub }
+    exposing
+        ( Url
+        , clicks
+        )
 
 {-| A generic monitor for click events on HTML nodes that have an href attribute.
 
@@ -20,16 +22,15 @@ get notifications with those.
 import Dict
 import Process
 import Task exposing (Task)
-
 import Json.Decode as Json
-
 import Native.LinkMonitor
 
 
 -- LINK EVENTS
 
+
 type alias Url =
-  String
+    String
 
 
 {-| Subscribe to click events on HTML nodes. You provide a decoder that should
@@ -46,7 +47,7 @@ might say like this to capture all clicks:
 -}
 clicks : Json.Decoder () -> (Url -> msg) -> Sub msg
 clicks decoder tagger =
-  subscription (Clicks decoder tagger)
+    subscription (Clicks decoder tagger)
 
 
 {-| Add an event handler on the `document` that monitors `click` events. If
@@ -57,21 +58,22 @@ it will detach the relevant JavaScript event listener.
 -}
 onClick : Json.Decoder a -> (a -> Task Never ()) -> Task Never Never
 onClick =
-  Native.LinkMonitor.onClick
+    Native.LinkMonitor.onClick
 
 
 
 -- SUBSCRIPTIONS
 
+
 type MySub msg
-  = Clicks (Json.Decoder ()) (Url -> msg)
+    = Clicks (Json.Decoder ()) (Url -> msg)
 
 
 subMap : (a -> b) -> MySub a -> MySub b
 subMap func sub =
-  case sub of
-    Clicks decoder tagger ->
-      Clicks decoder (tagger >> func)
+    case sub of
+        Clicks decoder tagger ->
+            Clicks decoder (tagger >> func)
 
 
 
@@ -79,14 +81,15 @@ subMap func sub =
 
 
 type alias State msg =
-  { subs : List (Monitor msg) }
+    { subs : List (Monitor msg) }
 
 
 type alias Monitor msg =
-  { decoder : Json.Decoder ()
-  , tagger : Url -> msg
-  , pid : Process.Id
-  }
+    { decoder : Json.Decoder ()
+    , tagger : Url -> msg
+    , pid : Process.Id
+    }
+
 
 
 -- EFFECT MANAGER
@@ -94,65 +97,67 @@ type alias Monitor msg =
 
 init : Task Never (State msg)
 init =
-  Task.succeed { subs = [] }
+    Task.succeed { subs = [] }
 
 
 type alias Msg =
-  { event : Json.Value }
+    { event : Json.Value }
 
 
 (&>) t1 t2 =
-  Task.andThen (always t2) t1
+    Task.andThen (always t2) t1
 
 
 onEffects : Platform.Router msg Msg -> List (MySub msg) -> State msg -> Task Never (State msg)
 onEffects router newSubs oldState =
-  let
-    cleanupOld : Task Never ()
-    cleanupOld =
-      List.map (.pid >> Process.kill) oldState.subs
-        |> Task.sequence
-        |> Task.andThen (always <| Task.succeed ())
+    let
+        cleanupOld : Task Never ()
+        cleanupOld =
+            List.map (.pid >> Process.kill) oldState.subs
+                |> Task.sequence
+                |> Task.andThen (always <| Task.succeed ())
 
-    monitor : MySub msg -> Task Never (Monitor msg)
-    monitor (Clicks decoder tagger) =
-      let
-        handler : Task Never Never
-        handler =
-          onClick
-            (decoder |> Json.andThen (always href) |> Json.andThen (always Json.value))
-            (Msg >> Platform.sendToSelf router)
-      in
-        Process.spawn handler |> Task.andThen (\pid -> Task.succeed <| Monitor decoder tagger pid)
+        monitor : MySub msg -> Task Never (Monitor msg)
+        monitor (Clicks decoder tagger) =
+            let
+                handler : Task Never Never
+                handler =
+                    onClick
+                        (decoder |> Json.andThen (always href) |> Json.andThen (always Json.value))
+                        (Msg >> Platform.sendToSelf router)
+            in
+                Process.spawn handler |> Task.andThen (\pid -> Task.succeed <| Monitor decoder tagger pid)
 
-    startNew : Task Never (State msg)
-    startNew =
-      List.map monitor newSubs
-        |> Task.sequence
-        |> Task.andThen (State >> Task.succeed)
-  in
-    cleanupOld &> startNew
+        startNew : Task Never (State msg)
+        startNew =
+            List.map monitor newSubs
+                |> Task.sequence
+                |> Task.andThen (State >> Task.succeed)
+    in
+        cleanupOld &> startNew
 
 
 onSelfMsg : Platform.Router msg Msg -> Msg -> State msg -> Task Never (State msg)
-onSelfMsg router {event} state =
-  let
-    -- Send to app if the decoder associated with the monitor succeeds
-    maybeSend : Monitor msg -> Task Never ()
-    maybeSend {decoder, tagger} =
-      case Json.decodeValue (decoder |> Json.andThen (always href)) event of
-        Result.Ok url ->
-          Platform.sendToApp router (tagger url)
+onSelfMsg router { event } state =
+    let
+        -- Send to app if the decoder associated with the monitor succeeds
+        maybeSend : Monitor msg -> Task Never ()
+        maybeSend { decoder, tagger } =
+            case Json.decodeValue (decoder |> Json.andThen (always href)) event of
+                Result.Ok url ->
+                    Platform.sendToApp router (tagger url)
 
-        Result.Err _ ->
-          Task.succeed ()
-  in
-    Task.sequence (List.map maybeSend state.subs)
-      &> Task.succeed state
+                Result.Err _ ->
+                    Task.succeed ()
+    in
+        Task.sequence (List.map maybeSend state.subs)
+            &> Task.succeed state
+
 
 
 -- Decode the href attribute of an event
+
+
 href : Json.Decoder Url
 href =
-  Json.at ["target", "href"] Json.string
-
+    Json.at [ "target", "href" ] Json.string

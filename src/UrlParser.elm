@@ -1,12 +1,30 @@
-module UrlParser exposing
-  ( Parser
-  , string, int, s, custom
-  , (</>), oneOf, top
-  , (<$>), cons0, cons1, cons2, cons3, cons4, cons5
-  , (<?>), stringParam, intParam
-  , customParam, requiredParam, optionalParam, manyParam
-  , parse, reverse
-  )
+module UrlParser
+    exposing
+        ( Parser
+        , string
+        , int
+        , s
+        , custom
+        , (</>)
+        , oneOf
+        , top
+        , (<$>)
+        , cons0
+        , cons1
+        , cons2
+        , cons3
+        , cons4
+        , cons5
+        , (<?>)
+        , stringParam
+        , intParam
+        , customParam
+        , requiredParam
+        , optionalParam
+        , manyParam
+        , parse
+        , reverse
+        )
 
 {-|
 
@@ -44,12 +62,10 @@ and [this paper](http://www.informatik.uni-marburg.de/~rendel/unparse/rendel10in
 import Dict
 import Function.Extra
 import Maybe.Extra
-
 import Iso exposing (Iso, (<<<), (>>>), (***))
 import ParserPrinter as ParserPrinter
 import ParserPrinter.Combinators as Combinators
 import UrlSegment
-
 
 
 -- PARSERS
@@ -61,7 +77,7 @@ and results in a `b` if parsing succeeds. Additionally, it takes a `b` to print 
 segment and returns a `a` if printing succeeds.
 -}
 type alias Parser a b =
-  ParserPrinter.ParserPrinter a b
+    ParserPrinter.ParserPrinter a b
 
 
 
@@ -75,9 +91,9 @@ type alias Parser a b =
     -- /bob     ==>  Just "bob"
     -- /42/     ==>  Just "42"
 -}
-string : Parser a (String, a)
+string : Parser a ( String, a )
 string =
-  custom Iso.string
+    custom Iso.string
 
 
 {-| Parse a segment of the path as an `Int`.
@@ -87,9 +103,9 @@ string =
     -- /bob     ==>  Nothing
     -- /42/     ==>  Just 42
 -}
-int : Parser a (Int, a)
+int : Parser a ( Int, a )
 int =
-  custom Iso.int
+    custom Iso.int
 
 
 {-| Parse a segment of the path if it matches a given string.
@@ -99,7 +115,7 @@ int =
 -}
 s : String -> Parser a a
 s str =
-  Combinators.pop (Iso.element str) <$> ParserPrinter.path
+    Combinators.pop (Iso.element str) <$> ParserPrinter.path
 
 
 {-| Create a custom path segment parser. You need to provide a partial
@@ -118,9 +134,9 @@ You can use it to define something like “only CSS files” like this:
     css =
       custom <| Iso.subset <| String.endsWith ".css"
 -}
-custom : Iso String a -> Parser r (a, r)
+custom : Iso String a -> Parser r ( a, r )
 custom iso =
-  Combinators.mapHead iso ParserPrinter.path
+    Combinators.mapHead iso ParserPrinter.path
 
 
 
@@ -143,12 +159,14 @@ custom iso =
 -}
 (</>) : Parser a b -> Parser b c -> Parser a c
 (</>) =
-  flip ParserPrinter.compose
-
+    flip ParserPrinter.compose
 infixr 7 </>
 
 
+
 -- TODO: fix comments.
+
+
 {-| Try a bunch of different path parsers.
 
     type Route
@@ -197,7 +215,7 @@ infixr 7 </>
 -}
 oneOf : List (Parser a b) -> Parser a b
 oneOf =
-  List.foldr ParserPrinter.alternative ParserPrinter.empty
+    List.foldr ParserPrinter.alternative ParserPrinter.empty
 
 
 {-| A parser that does not consume any path segments.
@@ -209,11 +227,12 @@ You could use it to define optional parsers, for example.
 -}
 top : Parser a a
 top =
-  ParserPrinter.identity
+    ParserPrinter.identity
 
 
 
 -- DATA TYPES
+
 
 {-| Combine a pure parser with a parser that consumes input.
 You will usually use this with data constructors. For example:
@@ -238,55 +257,54 @@ forward slash.
 -}
 (<$>) : Parser b c -> Parser a b -> Parser a c
 (<$>) =
-  flip (</>)
-
+    flip (</>)
 infixr 7 <$>
 
 
 {-| A constructor with no arguments.
 -}
-cons0 : t -> Parser r (t, r)
+cons0 : t -> Parser r ( t, r )
 cons0 t =
-  Combinators.push <| Iso.invert <| Iso.element t
+    Combinators.push <| Iso.invert <| Iso.element t
 
 
 {-| A constructor with one argument.
 -}
-cons1 : (a -> t) -> (t -> Maybe a) -> Parser (a, r) (t, r)
+cons1 : (a -> t) -> (t -> Maybe a) -> Parser ( a, r ) ( t, r )
 cons1 inj proj =
-  Combinators.pure <| Iso.iso (inj >> Just) proj *** Iso.identity
+    Combinators.pure <| Iso.iso (inj >> Just) proj *** Iso.identity
 
 
 {-| A constructor with two arguments.
 -}
-cons2 : (a -> b -> t) -> (t -> Maybe (a, b)) -> Parser (a, (b, r)) (t, r)
+cons2 : (a -> b -> t) -> (t -> Maybe ( a, b )) -> Parser ( a, ( b, r ) ) ( t, r )
 cons2 inj proj =
-  Combinators.pull2 </>
-    (Combinators.pure <| Iso.iso (uncurry inj >> Just) proj *** Iso.identity)
+    Combinators.pull2
+        </> (Combinators.pure <| Iso.iso (uncurry inj >> Just) proj *** Iso.identity)
 
 
 {-| A constructor with three arguments.
 -}
-cons3 : (a -> b -> c -> t) -> (t -> Maybe (a, b, c)) -> Parser (a, (b, (c, r))) (t, r)
+cons3 : (a -> b -> c -> t) -> (t -> Maybe ( a, b, c )) -> Parser ( a, ( b, ( c, r ) ) ) ( t, r )
 cons3 inj proj =
-  Combinators.pull3 </>
-    (Combinators.pure <| Iso.iso (Function.Extra.uncurry3 inj >> Just) proj *** Iso.identity)
+    Combinators.pull3
+        </> (Combinators.pure <| Iso.iso (Function.Extra.uncurry3 inj >> Just) proj *** Iso.identity)
 
 
 {-| A constructor with four arguments.
 -}
-cons4 : (a -> b -> c -> d -> t) -> (t -> Maybe (a, b, c, d)) -> Parser (a, (b, (c, (d, r)))) (t, r)
+cons4 : (a -> b -> c -> d -> t) -> (t -> Maybe ( a, b, c, d )) -> Parser ( a, ( b, ( c, ( d, r ) ) ) ) ( t, r )
 cons4 inj proj =
-  Combinators.pull4 </>
-    (Combinators.pure <| Iso.iso (Function.Extra.uncurry4 inj >> Just) proj *** Iso.identity)
+    Combinators.pull4
+        </> (Combinators.pure <| Iso.iso (Function.Extra.uncurry4 inj >> Just) proj *** Iso.identity)
 
 
 {-| A constructor with five arguments.
 -}
-cons5 : (a -> b -> c -> d -> e -> t) -> (t -> Maybe (a, b, c, d, e)) -> Parser (a, (b, (c, (d, (e, r))))) (t, r)
+cons5 : (a -> b -> c -> d -> e -> t) -> (t -> Maybe ( a, b, c, d, e )) -> Parser ( a, ( b, ( c, ( d, ( e, r ) ) ) ) ) ( t, r )
 cons5 inj proj =
-  Combinators.pull5 </>
-    (Combinators.pure <| Iso.iso (Function.Extra.uncurry5 inj >> Just) proj *** Iso.identity)
+    Combinators.pull5
+        </> (Combinators.pure <| Iso.iso (Function.Extra.uncurry5 inj >> Just) proj *** Iso.identity)
 
 
 
@@ -315,8 +333,7 @@ cons5 inj proj =
 -}
 (<?>) : Parser a b -> Parser b c -> Parser a c
 (<?>) =
-  (</>)
-
+    (</>)
 infixr 7 <?>
 
 
@@ -326,9 +343,9 @@ infixr 7 <?>
     -- /blog/              ==>  Just Nothing
     -- /blog/?search=cats  ==>  Just (Just "cats")
 -}
-stringParam : String -> Parser a (Maybe String, a)
+stringParam : String -> Parser a ( Maybe String, a )
 stringParam name =
-  optionalParam name Iso.string
+    optionalParam name Iso.string
 
 
 {-| Parse a query parameter as an `Int`. Maybe you want to show paginated
@@ -339,40 +356,40 @@ should appear first.
     -- /results           ==>  Just Nothing
     -- /results?start=10  ==>  Just (Just 10)
 -}
-intParam : String -> Parser a (Maybe Int, a)
+intParam : String -> Parser a ( Maybe Int, a )
 intParam name =
-  optionalParam name Iso.int
+    optionalParam name Iso.int
 
 
 {-| Create a custom query parser. You get a list af values for
 the given key since the same parameter can appear multiple times.
 If it isn't in the parameter list, you will get an empty list.
 -}
-customParam : String -> (Iso (List String) a) -> Parser r (a, r)
+customParam : String -> Iso (List String) a -> Parser r ( a, r )
 customParam name iso =
-  Combinators.mapHead iso <| ParserPrinter.query name
+    Combinators.mapHead iso <| ParserPrinter.query name
 
 
 {-| Parse a query parameter that is given exactly once. The parser fails
 if the parameter is not given or given more than once.
 -}
-requiredParam : String -> (Iso String a) -> Parser r (a, r)
+requiredParam : String -> Iso String a -> Parser r ( a, r )
 requiredParam name iso =
-  let
-    matchSingleton : List c -> Maybe c
-    matchSingleton l =
-      case l of
-        [x] ->
-          Just x
+    let
+        matchSingleton : List c -> Maybe c
+        matchSingleton l =
+            case l of
+                [ x ] ->
+                    Just x
 
-        _ ->
-          Nothing
+                _ ->
+                    Nothing
 
-    one : Iso (List String) String
-    one =
-      Iso.iso matchSingleton (\x -> Just [x])
-  in
-    customParam name (iso <<< one)
+        one : Iso (List String) String
+        one =
+            Iso.iso matchSingleton (\x -> Just [ x ])
+    in
+        customParam name (iso <<< one)
 
 
 {-| Parse a query parameter that is given at most once. If the parameter is
@@ -387,26 +404,26 @@ parameter parsers are all built with this:
     intParam =
       optionalParam name Iso.int
 -}
-optionalParam : String -> (Iso String a) -> Parser r (Maybe a, r)
+optionalParam : String -> Iso String a -> Parser r ( Maybe a, r )
 optionalParam name iso =
-  let
-    matchSingleton : List c -> Maybe (Maybe c)
-    matchSingleton l =
-      case l of
-        [] ->
-          Just Nothing
+    let
+        matchSingleton : List c -> Maybe (Maybe c)
+        matchSingleton l =
+            case l of
+                [] ->
+                    Just Nothing
 
-        [x] ->
-          Just <| Just x
+                [ x ] ->
+                    Just <| Just x
 
-        _ ->
-          Nothing
+                _ ->
+                    Nothing
 
-    one : Iso (List String) (Maybe String)
-    one =
-      Iso.iso matchSingleton (Maybe.Extra.maybeToList >> Just)
-  in
-    customParam name (Iso.liftMaybe iso <<< one)
+        one : Iso (List String) (Maybe String)
+        one =
+            Iso.iso matchSingleton (Maybe.Extra.maybeToList >> Just)
+    in
+        customParam name (Iso.liftMaybe iso <<< one)
 
 
 {-| Parse a query parameter that is given 0 or more times. You need
@@ -417,9 +434,9 @@ parser fails. Otherwise, you get a list of parsed values. For example:
     parse (s "posts" </> manyParam "user" Iso.int) location
     -- /posts?user=1&user=2  ==>  Just [1, 2]
 -}
-manyParam : String -> (Iso String a) -> Parser r (List a, r)
+manyParam : String -> Iso String a -> Parser r ( List a, r )
 manyParam name iso =
-  customParam name (Iso.liftList iso)
+    customParam name (Iso.liftList iso)
 
 
 
@@ -428,14 +445,13 @@ manyParam name iso =
 
 {-| Parse a `UrlSegment.Segment` into an Elm value.
 -}
-parse : Parser () (a, ()) -> UrlSegment.Segment -> Maybe a
+parse : Parser () ( a, () ) -> UrlSegment.Segment -> Maybe a
 parse p seg =
-  ParserPrinter.parse p seg |> Maybe.map Tuple.first
+    ParserPrinter.parse p seg |> Maybe.map Tuple.first
 
 
 {-| Print a `UrlSegment.Segment` given an Elm value.
 -}
-reverse : Parser () (a, ()) -> a -> Maybe UrlSegment.Segment
+reverse : Parser () ( a, () ) -> a -> Maybe UrlSegment.Segment
 reverse p x =
-  ParserPrinter.print p (x, ())
-
+    ParserPrinter.print p ( x, () )
