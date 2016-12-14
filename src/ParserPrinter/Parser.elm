@@ -3,6 +3,7 @@ module ParserPrinter.Parser
         ( Parser
         , identity
         , compose
+        , composeR
         , empty
         , alternative
         , map
@@ -32,7 +33,6 @@ module ParserPrinter.Parser
 
 import Dict
 import Iso exposing (Iso, apply)
-import ParserPrinter.State as State exposing (State)
 import UrlSegment exposing (Segment)
 
 
@@ -43,7 +43,7 @@ import UrlSegment exposing (Segment)
 in a `b` if parsing succeeds.
 -}
 type Parser a b
-    = Parser (State a -> List (State b))
+    = Parser (Segment -> List ( a -> Maybe b, Segment ))
 
 
 
@@ -52,12 +52,32 @@ type Parser a b
 
 identity : Parser a a
 identity =
-    Parser <| \state -> [ state ]
+    Parser <| \state -> [ ( Basics.identity >> Just, state ) ]
 
 
+{-| Combine two parsers. The effects happen left to right,
+that is, the left parser gets to consume path segments first.
+-}
 compose : Parser b c -> Parser a b -> Parser a c
 compose (Parser p) (Parser q) =
-    Parser <| \state -> List.concatMap p (q state)
+    Parser <|
+        \state ->
+            List.concatMap
+                (\( pf, state ) -> List.map (\( qf, state ) -> ( qf >> Maybe.andThen pf, state )) (q state))
+                (p state)
+
+
+{-| Combine two parsers in reverse order, but the effects still
+happen left to right. So this is significantly different from
+`flip compose` when both parsers have effects.
+-}
+composeR : Parser a b -> Parser b c -> Parser a c
+composeR (Parser p) (Parser q) =
+    Parser <|
+        \state ->
+            List.concatMap
+                (\( qf, state ) -> List.map (\( pf, state ) -> ( pf >> Maybe.andThen qf, state )) (p state))
+                (q state)
 
 
 
@@ -82,7 +102,7 @@ map : Iso a b -> Parser r a -> Parser r b
 map iso (Parser p) =
     Parser <|
         \state ->
-            p state |> List.filterMap (State.mapMaybe <| apply iso)
+            p state |> List.map (\( pf, state ) -> ( pf >> Maybe.andThen (apply iso), state ))
 
 
 
@@ -92,24 +112,24 @@ map iso (Parser p) =
 path : Parser a ( String, a )
 path =
     Parser <|
-        \{ segment, value } ->
+        \segment ->
             case segment.path of
                 [] ->
                     []
 
                 next :: rest ->
-                    [ { segment = { segment | path = rest }, value = ( next, value ) } ]
+                    [ ( (,) next >> Just, { segment | path = rest } ) ]
 
 
 query : String -> Parser a ( List String, a )
 query key =
     Parser <|
-        \state ->
+        \segment ->
             let
                 values =
-                    Maybe.withDefault [] <| Dict.get key state.segment.query
+                    Maybe.withDefault [] <| Dict.get key segment.query
             in
-                [ State.map (\a -> ( values, a )) state ]
+                [ ( (,) values >> Just, segment ) ]
 
 
 
@@ -118,7 +138,7 @@ query key =
 
 parse : Parser () a -> Segment -> Maybe a
 parse (Parser p) seg =
-    p { segment = seg, value = () }
-        |> List.filter (.segment >> .path >> List.isEmpty)
+    p seg
+        |> List.filter (Tuple.second >> .path >> List.isEmpty)
+        |> List.filterMap (Tuple.first >> \f -> f ())
         |> List.head
-        |> Maybe.map .value

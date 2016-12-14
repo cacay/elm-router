@@ -3,6 +3,7 @@ module ParserPrinter.Printer
         ( Printer
         , identity
         , compose
+        , composeR
         , empty
         , alternative
         , map
@@ -32,7 +33,6 @@ module ParserPrinter.Printer
 
 import Dict
 import Iso exposing (Iso, unapply)
-import ParserPrinter.State as State exposing (State)
 import UrlSegment exposing (Segment, merge)
 
 
@@ -43,7 +43,7 @@ import UrlSegment exposing (Segment, merge)
 in an `a` if printing succeeds.
 -}
 type Printer a b
-    = Printer (State b -> List (State a))
+    = Printer (b -> List ( Segment -> Segment, a ))
 
 
 
@@ -52,12 +52,29 @@ type Printer a b
 
 identity : Printer a a
 identity =
-    Printer <| \state -> [ state ]
+    Printer <| \a -> [ ( Basics.identity, a ) ]
 
 
+{-| Combine two printers. The effects happen left to right,
+that is, the output has the first printer's output followed
+by the second.
+-}
 compose : Printer b c -> Printer a b -> Printer a c
 compose (Printer p) (Printer q) =
-    Printer <| \state -> List.concatMap q (p state)
+    Printer <|
+        \c ->
+            List.concatMap (\( pf, b ) -> List.map (\( qf, a ) -> ( qf >> pf, a )) (q b)) (p c)
+
+
+{-| Combine two printers in reverse order, but the effects still
+happen left to right. So this is significantly different from
+`flip compose` when both printers have effects.
+-}
+composeR : Printer a b -> Printer b c -> Printer a c
+composeR (Printer p) (Printer q) =
+    Printer <|
+        \c ->
+            List.concatMap (\( qf, b ) -> List.map (\( pf, a ) -> ( qf >> pf, a )) (p b)) (q c)
 
 
 
@@ -71,7 +88,7 @@ empty =
 
 alternative : Printer a b -> Printer a b -> Printer a b
 alternative (Printer p) (Printer q) =
-    Printer <| \state -> p state ++ q state
+    Printer <| \b -> p b ++ q b
 
 
 
@@ -81,13 +98,13 @@ alternative (Printer p) (Printer q) =
 map : Iso a b -> Printer r a -> Printer r b
 map iso (Printer p) =
     Printer <|
-        \state ->
-            case unapply iso state.value of
+        \b ->
+            case unapply iso b of
                 Nothing ->
                     []
 
                 Just a ->
-                    p { state | value = a }
+                    p a
 
 
 
@@ -97,25 +114,17 @@ map iso (Printer p) =
 path : Printer a ( String, a )
 path =
     Printer <|
-        \{ segment, value } ->
-            let
-                newSegment =
-                    { segment | path = Tuple.first value :: segment.path }
-            in
-                [ { segment = newSegment, value = Tuple.second value } ]
+        \( pathSegment, a ) ->
+            [ ( \segment -> { segment | path = pathSegment :: segment.path }, a ) ]
 
 
 query : String -> Printer a ( List String, a )
 query key =
     Printer <|
-        \{ segment, value } ->
-            let
-                -- Note: we do a `Dict.insert` instead of a `UrlSegment.merge` (which does a deep union)
-                -- since that would lead to duplicates.
-                newSegment =
-                    { segment | query = Dict.insert key (Tuple.first value) segment.query }
-            in
-                [ { segment = newSegment, value = Tuple.second value } ]
+        \( params, a ) ->
+            -- Note: we do a `Dict.insert` instead of a `UrlSegment.merge` (which does a deep union)
+            -- since that would lead to duplicates.
+            [ ( \segment -> { segment | query = Dict.insert key params segment.query }, a ) ]
 
 
 
@@ -124,6 +133,6 @@ query key =
 
 print : Printer () a -> a -> Maybe Segment
 print (Printer p) a =
-    p { segment = UrlSegment.empty, value = a }
+    p a
         |> List.head
-        |> Maybe.map .segment
+        |> Maybe.map (\( f, () ) -> f UrlSegment.empty)

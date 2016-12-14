@@ -66,13 +66,25 @@ identity =
         }
 
 
-{-| `compose q p` first runs `p`, then feeds its output to `q`.
+{-| Compose two parsers. The effects occur left to right, that is, in `compose p q`,
+`p` will consume path segments before `q`.
 -}
 compose : ParserPrinter b c -> ParserPrinter a b -> ParserPrinter a c
 compose (ParserPrinter p) (ParserPrinter q) =
     ParserPrinter
         { parser = Parser.compose p.parser q.parser
         , printer = Printer.compose p.printer q.printer
+        }
+
+
+{-| Compose two parsers in reverse order, but the effects still occur left to right.
+So this is significantly different from `flip compose` when both parsers have effects.
+-}
+composeR : ParserPrinter a b -> ParserPrinter b c -> ParserPrinter a c
+composeR (ParserPrinter p) (ParserPrinter q) =
+    ParserPrinter
+        { parser = Parser.composeR p.parser q.parser
+        , printer = Printer.composeR p.printer q.printer
         }
 
 

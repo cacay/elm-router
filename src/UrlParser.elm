@@ -158,9 +158,9 @@ custom iso =
     -- /search/       ==>  Nothing
     -- /cats/         ==>  Nothing
 -}
-(</>) : Parser a b -> Parser b c -> Parser a c
+(</>) : Parser b c -> Parser a b -> Parser a c
 (</>) =
-    flip ParserPrinter.compose
+    ParserPrinter.compose
 infixr 7 </>
 
 
@@ -251,14 +251,13 @@ You will usually use this with data constructors. For example:
         , cons2 User rUser     <$> s "user" </> string </> int
         ]
 
-Under the hood, this is just `(</>)` with the arguments flipped, which
-means it can be used with any parser (even impure ones). This looks nicer
-though since you can put the constructor first and `(</>)` implies a
-forward slash.
+Under the hood, this is equivalent to `(</>)` , which means it can
+be used with any parser (even impure ones). This has the benefit of
+not implying a forward slash.
 -}
 (<$>) : Parser b c -> Parser a b -> Parser a c
 (<$>) =
-    ParserPrinter.compose
+    (</>)
 infixr 7 <$>
 
 
@@ -280,28 +279,32 @@ cons1 inj proj =
 -}
 cons2 : (a -> b -> t) -> (t -> Maybe ( a, b )) -> Parser ( a, ( b, r ) ) ( t, r )
 cons2 inj proj =
-    Combinators.pull2 </> Combinators.pureHead (Iso.iso (uncurry inj >> Just) proj)
+    Combinators.pull2
+        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso (uncurry inj >> Just) proj)
 
 
 {-| A constructor with three arguments.
 -}
 cons3 : (a -> b -> c -> t) -> (t -> Maybe ( a, b, c )) -> Parser ( a, ( b, ( c, r ) ) ) ( t, r )
 cons3 inj proj =
-    Combinators.pull3 </> Combinators.pureHead (Iso.iso (Function.Extra.uncurry3 inj >> Just) proj)
+    Combinators.pull3
+        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso (Function.Extra.uncurry3 inj >> Just) proj)
 
 
 {-| A constructor with four arguments.
 -}
 cons4 : (a -> b -> c -> d -> t) -> (t -> Maybe ( a, b, c, d )) -> Parser ( a, ( b, ( c, ( d, r ) ) ) ) ( t, r )
 cons4 inj proj =
-    Combinators.pull4 </> Combinators.pureHead (Iso.iso (Function.Extra.uncurry4 inj >> Just) proj)
+    Combinators.pull4
+        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso (Function.Extra.uncurry4 inj >> Just) proj)
 
 
 {-| A constructor with five arguments.
 -}
 cons5 : (a -> b -> c -> d -> e -> t) -> (t -> Maybe ( a, b, c, d, e )) -> Parser ( a, ( b, ( c, ( d, ( e, r ) ) ) ) ) ( t, r )
 cons5 inj proj =
-    Combinators.pull5 </> Combinators.pureHead (Iso.iso (Function.Extra.uncurry5 inj >> Just) proj)
+    Combinators.pull5
+        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso (Function.Extra.uncurry5 inj >> Just) proj)
 
 
 
@@ -328,7 +331,7 @@ cons5 inj proj =
     -- /blog/?search=cats  ==>  Just (BlogList (Just "cats"))
     -- /blog/42            ==>  Just (BlogPost 42)
 -}
-(<?>) : Parser a b -> Parser b c -> Parser a c
+(<?>) : Parser b c -> Parser a b -> Parser a c
 (<?>) =
     (</>)
 infixr 7 <?>
