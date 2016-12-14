@@ -104,6 +104,7 @@ type alias Msg =
     { event : Json.Value }
 
 
+(&>) : Task e a -> Task e b -> Task e b
 (&>) t1 t2 =
     Task.andThen (always t2) t1
 
