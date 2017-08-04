@@ -8,6 +8,7 @@ module ParserPrinter
         , map
         , path
         , query
+        , hash
         , parse
         , print
         )
@@ -163,6 +164,21 @@ query key =
     ParserPrinter
         { parser = Parser.query key
         , printer = Printer.query key
+        }
+
+
+{-| Parse the hash. We get back a maybe since the hash
+may not be given.
+
+    parse hash segment
+    -- /home#introduction ==> Just (Just "introduction", ())
+    -- / ==> Just (Nothing, ())
+-}
+hash : ParserPrinter a ( Maybe String, a )
+hash =
+    ParserPrinter
+        { parser = Parser.hash
+        , printer = Printer.hash
         }
 
 

@@ -42,7 +42,6 @@ value.
 
 -}
 
-import Function.Extra
 import Maybe.Extra
 
 

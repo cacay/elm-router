@@ -29,6 +29,7 @@ import Navigation exposing (Location)
 type alias Segment =
     { path : List String
     , query : Dict.Dict String (List String)
+    , hash : Maybe String
     }
 
 
@@ -36,7 +37,10 @@ type alias Segment =
 -}
 empty : Segment
 empty =
-    Segment [] Dict.empty
+    { path = []
+    , query = Dict.empty
+    , hash = Nothing
+    }
 
 
 {-| Merge two segments by appending their paths and taking the union
@@ -44,7 +48,10 @@ of their query parameters.
 -}
 merge : Segment -> Segment -> Segment
 merge s1 s2 =
-    Segment (s1.path ++ s2.path) (unionWith (++) s1.query s2.query)
+    { path = s1.path ++ s2.path
+    , query = unionWith (++) s1.query s2.query
+    , hash = Maybe.Extra.or s1.hash s2.hash
+    }
 
 
 unionWith : (a -> a -> a) -> Dict.Dict comparable a -> Dict.Dict comparable a -> Dict.Dict comparable a
@@ -72,6 +79,11 @@ fromPath url =
     in
         { path = parsed.path
         , query = List.foldr (\( k, v ) -> insertWith (++) k [ v ]) Dict.empty parsed.query
+        , hash =
+            if String.isEmpty parsed.hash then
+                Nothing
+            else
+                Just parsed.hash
         }
 
 
@@ -89,17 +101,18 @@ toPath segment =
     in
         Erl.new
             |> Erl.appendPathSegments segment.path
-            |> \erl ->
-                { erl | query = splitQuery }
-                    |> Erl.toString
-                    |> String.cons '/'
+            |> (\erl -> { erl | query = splitQuery })
+            |> (\erl -> { erl | query = splitQuery })
+            |> (\erl -> { erl | hash = Maybe.withDefault "" segment.hash })
+            |> Erl.toString
+            |> String.cons '/'
 
 
 {-| Convert from the `path` and `search` components of a `Navigation.Location`.
 -}
 fromLocationPath : Location -> Segment
 fromLocationPath location =
-    fromPath (location.pathname ++ location.search)
+    fromPath (location.pathname ++ location.search ++ location.hash)
 
 
 {-| Replace the `path` and `search` components of a `Navigation.Location`.
@@ -113,4 +126,5 @@ updateLocationPath segment location =
         { location
             | pathname = Erl.extractPath printed
             , search = Erl.extractQuery printed
+            , hash = Erl.extractHash printed
         }

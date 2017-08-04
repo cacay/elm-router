@@ -9,6 +9,7 @@ module ParserPrinter.Printer
         , map
         , path
         , query
+        , hash
         , print
         )
 
@@ -125,6 +126,13 @@ query key =
             -- Note: we do a `Dict.insert` instead of a `UrlSegment.merge` (which does a deep union)
             -- since that would lead to duplicates.
             [ ( \segment -> { segment | query = Dict.insert key params segment.query }, a ) ]
+
+
+hash : Printer a ( Maybe String, a )
+hash =
+    Printer <|
+        \( hash, a ) ->
+            [ ( \segment -> { segment | hash = hash }, a ) ]
 
 
 

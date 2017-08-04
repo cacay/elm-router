@@ -9,6 +9,7 @@ module ParserPrinter.Parser
         , map
         , path
         , query
+        , hash
         , parse
         )
 
@@ -130,6 +131,13 @@ query key =
                     Maybe.withDefault [] <| Dict.get key segment.query
             in
                 [ ( (,) values >> Just, segment ) ]
+
+
+hash : Parser a ( Maybe String, a )
+hash =
+    Parser <|
+        \segment ->
+            [ ( (,) segment.hash >> Just, segment ) ]
 
 
 

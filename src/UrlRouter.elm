@@ -14,7 +14,9 @@ module UrlRouter
 -}
 
 import Html exposing (Html, Attribute)
+import Html.Lazy
 import Html.Attributes as Attribute
+import Task
 import Json.Decode as Json
 import Navigation exposing (Location)
 import UrlParser
@@ -79,6 +81,8 @@ type alias Model userModel route =
     { userModel : userModel
     , route : route
     , reportedUrl : Location
+    , scrolledId : Maybe LinkMonitor.Id
+    , retryScroll : Maybe LinkMonitor.Id
     }
 
 
@@ -87,16 +91,29 @@ init app location =
     let
         userCmd =
             Cmd.map UserMsg (Tuple.second app.init)
+
+        model =
+            { userModel = Tuple.first app.init
+            , route = app.errorRoute
+            , reportedUrl = location
+            , scrolledId = Nothing
+            , retryScroll = Nothing
+            }
     in
         case getRoute app location of
-            Just ( route, navigate ) ->
-                ( { userModel = Tuple.first app.init, route = route, reportedUrl = location }
-                , Cmd.batch [ navigate, userCmd ]
+            NotFound ->
+                ( model
+                , userCmd
                 )
 
-            Nothing ->
-                ( { userModel = Tuple.first app.init, route = app.errorRoute, reportedUrl = location }
-                , userCmd
+            Found route ->
+                ( { model | route = route }
+                , Cmd.batch [ scrollToHash location, userCmd ]
+                )
+
+            FoundWithRedirect route redirect ->
+                ( { model | route = route }
+                , Cmd.batch [ redirect, userCmd ]
                 )
 
 
@@ -109,6 +126,8 @@ type Msg userMsg route
     | NewUrl Location
     | NewRoute route
     | LinkClick String
+    | ScrollSuccess LinkMonitor.Id
+    | ScrollFailure LinkMonitor.Id
 
 
 update : App model route msg -> Msg msg route -> Model model route -> ( Model model route, Cmd (Msg msg route) )
@@ -118,16 +137,36 @@ update app msg model =
             let
                 ( newUserModel, userCmd ) =
                     app.update (changeRoute app model.route) userMsg model.userModel
+
+                retryScroll =
+                    case model.retryScroll of
+                        Nothing ->
+                            Cmd.none
+
+                        Just id ->
+                            scrollToId id
             in
-                ( { model | userModel = newUserModel }, Cmd.map UserMsg userCmd )
+                ( if model.userModel == newUserModel then
+                    model
+                  else
+                    { model | userModel = newUserModel }
+                , Cmd.batch [ retryScroll, Cmd.map UserMsg userCmd ]
+                )
 
         NewUrl location ->
             case getRoute app location of
-                Nothing ->
+                NotFound ->
                     ( { model | route = app.errorRoute, reportedUrl = location }, Cmd.none )
 
-                Just ( route, cmd ) ->
-                    ( { model | route = route }, cmd )
+                Found newRoute ->
+                    ( { model | route = newRoute, reportedUrl = location, retryScroll = Nothing }
+                    , scrollToHashIfDifferent model.scrolledId location
+                    )
+
+                FoundWithRedirect newRoute redirect ->
+                    ( { model | route = newRoute, reportedUrl = location }
+                    , redirect
+                    )
 
         NewRoute newRoute ->
             -- TODO: should we update route here? It will also be updated once
@@ -149,6 +188,52 @@ update app msg model =
                 Just route ->
                     update app (NewRoute route) model
 
+        ScrollSuccess id ->
+            let
+                _ =
+                    if False then
+                        Debug.log "Scrolled to" id
+                    else
+                        ""
+            in
+                ( { model | scrolledId = Just id, retryScroll = Nothing }, Cmd.none )
+
+        ScrollFailure id ->
+            let
+                _ =
+                    if False then
+                        Debug.log "Failed to scroll, will retry after a user message" id
+                    else
+                        ""
+            in
+                ( { model | retryScroll = Just id }, Cmd.none )
+
+
+scrollToHashIfDifferent : Maybe LinkMonitor.Id -> Navigation.Location -> Cmd (Msg userMsg route)
+scrollToHashIfDifferent scrolledId location =
+    if scrolledId /= Just (idFromHash location) then
+        scrollToHash location
+    else
+        Cmd.none
+
+
+scrollToHash : Navigation.Location -> Cmd (Msg userMsg route)
+scrollToHash location =
+    scrollToId (idFromHash location)
+
+
+scrollToId : LinkMonitor.Id -> Cmd (Msg userMsg route)
+scrollToId id =
+    if not (String.isEmpty id) then
+        LinkMonitor.scrollTo id
+            |> Task.map (always <| ScrollSuccess id)
+            |> Task.onError
+                (\(LinkMonitor.NotFound id) -> Task.succeed (ScrollFailure id))
+            |> Task.perform identity
+    else
+        Task.succeed (ScrollSuccess "")
+            |> Task.perform identity
+
 
 
 -- VIEW
@@ -156,8 +241,8 @@ update app msg model =
 
 view : App model route msg -> Model model route -> Html (Msg msg route)
 view app model =
-    app.view (href app) model.userModel model.route
-        |> Html.map UserMsg
+    Html.Lazy.lazy3 app.view (href app) model.userModel model.route
+        |> Html.Lazy.lazy (Html.map UserMsg)
 
 
 
@@ -185,7 +270,11 @@ isNavigationClick =
         all
             [ expect "true" <| Json.at [ "target", "dataset", "elmRouter" ] Json.string
             , expect 0 <| Json.field "button" Json.int
-              -- TODO: modifier keys
+            , expect False <| Json.field "altKey" Json.bool
+            , expect False <| Json.field "ctrlKey" Json.bool
+            , expect False <| Json.field "altKey" Json.bool
+            , expect False <| Json.field "metaKey" Json.bool
+            , expect False <| Json.field "shiftKey" Json.bool
             ]
 
 
@@ -284,16 +373,16 @@ changeRoute app oldRoute newRoute =
 {-| Turn a location into a route. We also return a command in case we need to `normalize`
 the browser url.
 -}
-getRoute : App model route msg -> Location -> Maybe ( route, Cmd a )
+getRoute : App model route msg -> Location -> GetRoute msg route
 getRoute app location =
     let
         getPath : Location -> String
         getPath location =
-            location.pathname ++ location.search
+            location.pathname ++ location.search ++ location.hash
     in
         case UrlParser.parse app.router (UrlSegment.fromLocationPath location) of
             Nothing ->
-                Nothing
+                NotFound
 
             Just route ->
                 case UrlParser.reverse app.router route of
@@ -303,10 +392,21 @@ getRoute app location =
                     Just normalizedSegment ->
                         if getPath location == UrlSegment.toPath normalizedSegment then
                             -- Browser url is already normalized
-                            Just ( route, Cmd.none )
+                            Found route
                         else
                             -- We need to normalize the browser url
-                            Just ( route, Navigation.modifyUrl <| UrlSegment.toPath normalizedSegment )
+                            FoundWithRedirect route (Navigation.modifyUrl <| UrlSegment.toPath normalizedSegment)
+
+
+type GetRoute userMsg route
+    = NotFound
+    | Found route
+    | FoundWithRedirect route (Cmd (Msg userMsg route))
+
+
+idFromHash : Location -> String
+idFromHash location =
+    String.dropLeft 1 location.hash
 
 
 

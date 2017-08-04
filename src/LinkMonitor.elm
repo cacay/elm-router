@@ -3,6 +3,9 @@ effect module LinkMonitor
     exposing
         ( Url
         , clicks
+        , ScrollError(..)
+        , Id
+        , scrollTo
         )
 
 {-| A generic monitor for click events on HTML nodes that have an href attribute.
@@ -17,9 +20,11 @@ get notifications with those.
 # Link Monitor
 @docs clicks
 
+# Scrolling
+@docs scrollTo, Id, ScrollError
+
 -}
 
-import Dict
 import Process
 import Task exposing (Task)
 import Json.Decode as Json
@@ -59,6 +64,29 @@ it will detach the relevant JavaScript event listener.
 onClick : Json.Decoder a -> (a -> Task Never ()) -> Task Never Never
 onClick =
     Native.LinkMonitor.onClick
+
+
+{-| Scroll the window to display the node with the given ID at the top.
+Useful for emulating jumping to an anchor.
+-}
+scrollTo : Id -> Task ScrollError ()
+scrollTo =
+    Native.LinkMonitor.scrollTo
+
+
+{-| A unique identifier for a particular DOM node. When you create
+`<div id="my-thing"></div>` you would refer to it with the `Id` `"my-thing"`.
+-}
+type alias Id =
+    String
+
+
+{-|
+`scrollTo` looks up DOM nodes by ID. If you ask for an ID that
+is not currently attached to the DOM, you will get this error!
+-}
+type ScrollError
+    = NotFound String
 
 
 

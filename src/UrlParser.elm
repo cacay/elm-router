@@ -22,6 +22,10 @@ module UrlParser
         , requiredParam
         , optionalParam
         , manyParam
+        , (<#>)
+        , stringHash
+        , intHash
+        , customHash
         , withDefault
         , parse
         , reverse
@@ -47,6 +51,9 @@ A reversible URL parser.
 # Query Parameter Parsers
 @docs (<?>), stringParam, intParam
 @docs customParam, requiredParam, optionalParam, manyParam, withDefault
+
+# Hash Parsers
+@docs (<#>), stringHash, intHash, customHash
 
 # Run a Parser
 @docs parse, reverse, defaultRoute
@@ -439,9 +446,57 @@ manyParam name iso =
     customParam name (Iso.liftList iso)
 
 
-{-| Provide a default value for an optional parameter. When reversing,
-no query parameter will be generated in the output URL if the value matches
-the default.
+
+-- HASH
+
+
+{-| Parse the hash. Just a nicer looking alias for `</>`.
+-}
+(<#>) : Parser b c -> Parser a b -> Parser a c
+(<#>) =
+    (</>)
+infixr 7 <#>
+
+
+{-| Parse the hash as a `String`.
+
+    parse (s "blog" <?> hash ) location
+    -- /blog/        ==>  Just Nothing
+    -- /blog#user32  ==>  Just (Just "user32")
+-}
+stringHash : Parser a ( Maybe String, a )
+stringHash =
+    customHash Iso.string
+
+
+{-| Parse the hash as an `Int`.
+
+    parse (s "users" <?> hash ) location
+    -- /users/    ==>  Just Nothing
+    -- /users#32  ==>  Just (Just 32)
+-}
+intHash : Parser a ( Maybe Int, a )
+intHash =
+    customHash Iso.int
+
+
+{-| Parse the hash as a custom data type. If the hash is not given, you get
+`Nothing`. The primitive hash parsers are all built with this:
+
+    stringHash =
+      customHash Iso.string
+
+    intHash =
+      customHash Iso.int
+-}
+customHash : Iso String a -> Parser r ( Maybe a, r )
+customHash iso =
+    Combinators.mapHead (Iso.liftMaybe iso) ParserPrinter.hash
+
+
+{-| Provide a default value for an optional parameter or hash. When reversing,
+no query parameter or hash will be generated in the output URL if the value
+matches the default.
 -}
 withDefault : a -> Parser ( Maybe a, r ) ( a, r )
 withDefault default =
