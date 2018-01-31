@@ -3,7 +3,7 @@
 To run the examples in this folder, follow the following steps:
 
 ```bash
-git clone https://github.com/elm-lang/navigation.git
+git clone https://github.com/cacay/elm-router.git
 cd navigation
 cd examples
 elm-reactor

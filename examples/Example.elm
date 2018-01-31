@@ -3,8 +3,8 @@ module Main exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import UrlRouter
 import UrlParser exposing ((<$>), (</>), (<?>))
+import UrlRouter
 
 
 main =
@@ -16,10 +16,10 @@ app =
     { init = init
     , view = view
     , update = update
-    , subscriptions = (\_ -> Sub.none)
+    , subscriptions = \_ -> Sub.none
     , router = router
     , errorRoute = NotFound
-    , newHistoryEntry = (\_ _ -> True)
+    , newHistoryEntry = \_ _ -> True
     }
 
 
@@ -68,8 +68,8 @@ type alias Msg =
     Never
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
+update : UrlRouter.ChangeRoute Route msg -> Msg -> Model -> ( Model, Cmd Msg )
+update _ msg model =
     never msg
 
 
@@ -77,15 +77,15 @@ update msg model =
 -- VIEW
 
 
-view : Model -> Route -> Html msg
-view model route =
+view : UrlRouter.Href Route msg -> Model -> Route -> Html msg
+view href model route =
     div []
         [ h1 [] [ text "Pages" ]
-        , ul [] (List.map viewLink [ Home, Page1, Page2 ])
+        , ul [] (List.map (viewLink href) [ Home, Page1, Page2 ])
         , h1 [] [ text "Current Route: ", text <| toString route ]
         ]
 
 
-viewLink : Route -> Html msg
-viewLink route =
-    li [] [ a (UrlRouter.href app route) [ text <| toString route ] ]
+viewLink : UrlRouter.Href Route msg -> Route -> Html msg
+viewLink href route =
+    li [] [ a (href route) [ text <| toString route ] ]
