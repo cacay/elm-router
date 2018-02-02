@@ -1,10 +1,10 @@
 module UrlRouter
     exposing
         ( App
+        , ChangeRoute
+        , Href
         , Program
         , program
-        , Href
-        , ChangeRoute
         )
 
 {-| Create a `Program` that manages routing for you.
@@ -13,35 +13,36 @@ module UrlRouter
 
 -}
 
-import Html exposing (Html, Attribute)
-import Html.Lazy
+import Html exposing (Attribute, Html)
 import Html.Attributes as Attribute
-import Task
+import Html.Lazy
 import Json.Decode as Json
+import LinkMonitor
 import Navigation exposing (Location)
+import Task
 import UrlParser
 import UrlSegment exposing (Segment)
-import LinkMonitor
 
 
 {-| The configuration required to use this module to create a `Program`.
 
 The `init`, `update`, `subscriptions` and `view` fields have the same meaning
 as they do in [`Html.program`](http://package.elm-lang.org/packages/elm-lang/html/2.0.0/Html#program)
---- that is, you should provide what you normally provide to that function.
+--- that is, you should provide what you normally provide to those functions.
 
 So, the "special" fields are the `router`, `errorRoute`, and the
 `newHistoryEntry` function.
 
-* `router` will be used to map between the URL and a `route`.
+  - `router` will be used to map between the URL and a `route`.
 
-* `errorRoute` is used when `router` fails to parse a URL entered by the user.
-  If the router fails with a route you created, the app will crash as to catch errors
-  early. Let me know if you would prefer a different behavior (maybe send a message to
-  your app so you forward that to the servers?).
+  - `errorRoute` is used when `router` fails to parse a URL entered by the user.
+    If the router fails with a route you created, the app will crash as to catch errors
+    early. Let me know if you would prefer a different behavior (maybe send a message to
+    your app so you forward that to the servers?).
 
-* `newHistoryEntry` should decide, given the new route and the previous, whether
-   a new entry should be created or the latest one modified.
+  - `newHistoryEntry` should decide, given the new route and the previous, whether
+    a new entry should be created or the latest one modified.
+
 -}
 type alias App model route msg =
     { init : ( model, Cmd msg )
@@ -100,21 +101,21 @@ init app location =
             , retryScroll = Nothing
             }
     in
-        case getRoute app location of
-            NotFound ->
-                ( model
-                , userCmd
-                )
+    case getRoute app location of
+        NotFound ->
+            ( model
+            , userCmd
+            )
 
-            Found route ->
-                ( { model | route = route }
-                , Cmd.batch [ scrollToHash location, userCmd ]
-                )
+        Found route ->
+            ( { model | route = route }
+            , Cmd.batch [ scrollToHash location, userCmd ]
+            )
 
-            FoundWithRedirect route redirect ->
-                ( { model | route = route }
-                , Cmd.batch [ redirect, userCmd ]
-                )
+        FoundWithRedirect route redirect ->
+            ( { model | route = route }
+            , Cmd.batch [ redirect, userCmd ]
+            )
 
 
 
@@ -146,12 +147,12 @@ update app msg model =
                         Just id ->
                             scrollToId id
             in
-                ( if model.userModel == newUserModel then
-                    model
-                  else
-                    { model | userModel = newUserModel }
-                , Cmd.batch [ retryScroll, Cmd.map UserMsg userCmd ]
-                )
+            ( if model.userModel == newUserModel then
+                model
+              else
+                { model | userModel = newUserModel }
+            , Cmd.batch [ retryScroll, Cmd.map UserMsg userCmd ]
+            )
 
         NewUrl location ->
             case getRoute app location of
@@ -196,7 +197,7 @@ update app msg model =
                     else
                         ""
             in
-                ( { model | scrolledId = Just id, retryScroll = Nothing }, Cmd.none )
+            ( { model | scrolledId = Just id, retryScroll = Nothing }, Cmd.none )
 
         ScrollFailure id ->
             let
@@ -206,7 +207,7 @@ update app msg model =
                     else
                         ""
             in
-                ( { model | retryScroll = Just id }, Cmd.none )
+            ( { model | retryScroll = Just id }, Cmd.none )
 
 
 scrollToHashIfDifferent : Maybe LinkMonitor.Id -> Navigation.Location -> Cmd (Msg userMsg route)
@@ -267,15 +268,15 @@ isNavigationClick =
         all decoders =
             List.foldr (\l acc -> l |> Json.andThen (always acc)) (Json.succeed ()) decoders
     in
-        all
-            [ expect "true" <| Json.at [ "target", "dataset", "elmRouter" ] Json.string
-            , expect 0 <| Json.field "button" Json.int
-            , expect False <| Json.field "altKey" Json.bool
-            , expect False <| Json.field "ctrlKey" Json.bool
-            , expect False <| Json.field "altKey" Json.bool
-            , expect False <| Json.field "metaKey" Json.bool
-            , expect False <| Json.field "shiftKey" Json.bool
-            ]
+    all
+        [ expect "true" <| Json.at [ "target", "dataset", "elmRouter" ] Json.string
+        , expect 0 <| Json.field "button" Json.int
+        , expect False <| Json.field "altKey" Json.bool
+        , expect False <| Json.field "ctrlKey" Json.bool
+        , expect False <| Json.field "altKey" Json.bool
+        , expect False <| Json.field "metaKey" Json.bool
+        , expect False <| Json.field "shiftKey" Json.bool
+        ]
 
 
 subscriptions : App model route msg -> Model model route -> Sub (Msg msg route)
@@ -299,6 +300,7 @@ will be caught by `UrlRouter` and passed along to your app as a new route so tha
 they don't cause a page reload.
 
 TODO: example
+
 -}
 type alias Href route msg =
     route -> List (Attribute msg)
@@ -318,9 +320,9 @@ href app route =
                 Just segment ->
                     UrlSegment.toPath segment
     in
-        [ Attribute.href href
-        , Attribute.attribute "data-elm-router" "true"
-        ]
+    [ Attribute.href href
+    , Attribute.attribute "data-elm-router" "true"
+    ]
 
 
 {-| Sometimes you need to change the current route programmatically, without
@@ -339,6 +341,7 @@ these in your update function:
                 ( model, changeRoute route )
 
             ...
+
 -}
 type alias ChangeRoute route msg =
     route -> Cmd msg
@@ -366,8 +369,8 @@ changeRoute app oldRoute newRoute =
             else
                 Navigation.modifyUrl
     in
-        -- TODO: should we ignore if the routes are equal?
-        method url
+    -- TODO: should we ignore if the routes are equal?
+    method url
 
 
 {-| Turn a location into a route. We also return a command in case we need to `normalize`
@@ -380,22 +383,22 @@ getRoute app location =
         getPath location =
             location.pathname ++ location.search ++ location.hash
     in
-        case UrlParser.parse app.router (UrlSegment.fromLocationPath location) of
-            Nothing ->
-                NotFound
+    case UrlParser.parse app.router (UrlSegment.fromLocationPath location) of
+        Nothing ->
+            NotFound
 
-            Just route ->
-                case UrlParser.reverse app.router route of
-                    Nothing ->
-                        Debug.crash <| faultyIsoReverse route (getPath location)
+        Just route ->
+            case UrlParser.reverse app.router route of
+                Nothing ->
+                    Debug.crash <| faultyIsoReverse route (getPath location)
 
-                    Just normalizedSegment ->
-                        if getPath location == UrlSegment.toPath normalizedSegment then
-                            -- Browser url is already normalized
-                            Found route
-                        else
-                            -- We need to normalize the browser url
-                            FoundWithRedirect route (Navigation.modifyUrl <| UrlSegment.toPath normalizedSegment)
+                Just normalizedSegment ->
+                    if getPath location == UrlSegment.toPath normalizedSegment then
+                        -- Browser url is already normalized
+                        Found route
+                    else
+                        -- We need to normalize the browser url
+                        FoundWithRedirect route (Navigation.modifyUrl <| UrlSegment.toPath normalizedSegment)
 
 
 type GetRoute userMsg route

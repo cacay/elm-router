@@ -82,7 +82,7 @@ import UrlSegment
 {-| Turn URLs like `/blog/42/cat-herding-techniques` into nice Elm data and back.
 Intuitively, a `Parser a b` takes an `a` to parse a url segment (see `UrlSegment`)
 and results in a `b` if parsing succeeds. Additionally, it takes a `b` to print a
-segment and returns a `a` if printing succeeds.
+segment and returns an `a` if printing succeeds.
 -}
 type alias Parser a b =
     ParserPrinter.ParserPrinter a b
