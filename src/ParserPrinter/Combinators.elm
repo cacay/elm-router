@@ -1,32 +1,28 @@
-module ParserPrinter.Combinators
-    exposing
-        ( dimap
-        , mapHead
-        , pure
-        , pureHead
-        , pop
-        , push
-        , pull2
-        , pull3
-        , pull4
-        , pull5
-        , pull6
-        )
+module ParserPrinter.Combinators exposing
+    ( dimap, mapHead, pure, pureHead
+    , pop, push
+    , pull2, pull3
+    -- , pull4, pull5, pull6
+    )
 
-{-|
-Useful combinators for a `ParserPrinter`.
+{-| Useful combinators for a `ParserPrinter`.
+
 
 # Maps
+
 @docs dimap, mapHead, pure, pureHead
 
+
 # Argument stack
+
 @docs pop, push
 @docs pull2, pull3, pull4, pull5, pull6
 
 -}
 
-import Iso exposing (Iso, (***))
+import Iso exposing (Iso)
 import ParserPrinter as P
+
 
 
 -- MAPS
@@ -43,7 +39,7 @@ dimap iso1 iso2 p =
 -}
 mapHead : Iso h1 h2 -> P.ParserPrinter r ( h1, t ) -> P.ParserPrinter r ( h2, t )
 mapHead iso p =
-    P.map (iso *** Iso.identity) p
+    P.map (Iso.parallel iso Iso.identity) p
 
 
 {-| A `ParserPrinter` that transforms its input without any effects.
@@ -57,7 +53,7 @@ pure iso =
 -}
 pureHead : Iso a b -> P.ParserPrinter ( a, r ) ( b, r )
 pureHead iso =
-    pure (iso *** Iso.identity)
+    pure (Iso.parallel iso Iso.identity)
 
 
 
@@ -71,10 +67,10 @@ pop iso =
     let
         dropUnit : Iso ( (), t ) t
         dropUnit =
-            Iso.iso (Tuple.second >> Just) ((,) () >> Just)
+            Iso.iso (Tuple.second >> Just) ((\b -> ( (), b )) >> Just)
     in
-        pure (iso *** Iso.identity)
-            |> P.compose (pure dropUnit)
+    pure (Iso.parallel iso Iso.identity)
+        |> P.compose (pure dropUnit)
 
 
 {-| Add an argument to the stack without consuming any input.
@@ -84,10 +80,10 @@ push iso =
     let
         addUnit : Iso t ( (), t )
         addUnit =
-            Iso.iso ((,) () >> Just) (Tuple.second >> Just)
+            Iso.iso ((\b -> ( (), b )) >> Just) (Tuple.second >> Just)
     in
-        pure addUnit
-            |> P.compose (pure <| iso *** Iso.identity)
+    pure addUnit
+        |> P.compose (pure <| Iso.parallel iso Iso.identity)
 
 
 {-| Tuple up the top two arguments.
@@ -109,6 +105,8 @@ pull3 =
                     (\( ( a, b, c ), r ) -> Just ( ( a, b ), ( c, r ) ))
             )
 
+
+{- TODO: murder Evan
 
 {-| Tuple up the top four arguments.
 -}
@@ -147,3 +145,5 @@ pull6 =
                     (\( ( a, b, c, d, e ), ( f, r ) ) -> Just ( ( a, b, c, d, e, f ), r ))
                     (\( ( a, b, c, d, e, f ), r ) -> Just ( ( a, b, c, d, e ), ( f, r ) ))
             )
+
+-}

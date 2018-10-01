@@ -1,33 +1,37 @@
-module ParserPrinter.Printer
-    exposing
-        ( Printer
-        , identity
-        , compose
-        , composeR
-        , empty
-        , alternative
-        , map
-        , path
-        , query
-        , hash
-        , print
-        )
+module ParserPrinter.Printer exposing
+    ( Printer, print
+    , identity, compose
+    , empty, alternative
+    , map
+    , path, query
+    , composeR, hash
+    )
 
 {-|
 
+
 # Printer
+
 @docs Printer, print
 
+
 # Category
+
 @docs identity, compose
 
+
 # Alternative
+
 @docs empty, alternative
 
+
 # Iso Functor
+
 @docs map
 
+
 # Url
+
 @docs path, query
 
 -}
@@ -35,6 +39,7 @@ module ParserPrinter.Printer
 import Dict
 import Iso exposing (Iso, unapply)
 import UrlSegment exposing (Segment, merge)
+
 
 
 -- PRINTER
@@ -131,8 +136,8 @@ query key =
 hash : Printer a ( Maybe String, a )
 hash =
     Printer <|
-        \( hash, a ) ->
-            [ ( \segment -> { segment | hash = hash }, a ) ]
+        \( h, a ) ->
+            [ ( \segment -> { segment | hash = h }, a ) ]
 
 
 

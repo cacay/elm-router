@@ -1,43 +1,39 @@
-module Iso
-    exposing
-        ( Iso
-        , iso
-        , apply
-        , unapply
-        , invert
-        , identity
-        , (<<<)
-        , (>>>)
-        , (***)
-        , commute
-        , associate
-        , liftMaybe
-        , liftList
-        , ignore
-        , element
-        , subset
-        , string
-        , int
-        )
+module Iso exposing
+    ( Iso, iso, apply, unapply, invert
+    , identity
+    , commute, associate, liftMaybe, liftList
+    , ignore, element, subset
+    , string, int
+    , parallel, composeLeft, composeRight
+    )
 
-{-|
-Partial isomorphisms between types. These are like functions,
+{-| Partial isomorphisms between types. These are like functions,
 but they go in both directions, and they might fail to produce a
 value.
 
+
 # Partial Isomorphisms
+
 @docs Iso, iso, apply, unapply, invert
 
+
 # Category
-@docs identity, (<<<), (>>>)
+
+@docs identity, composeLeft, composeRight
+
 
 # Lifting to Type Constructors
-@docs (***), commute, associate, liftMaybe, liftList
+
+@docs parallel, commute, associate, liftMaybe, liftList
+
 
 # Combinators
+
 @docs ignore, element, subset
 
+
 # Base types
+
 @docs string, int
 
 -}
@@ -88,23 +84,16 @@ identity =
 
 {-| Compose two isomorphisms.
 -}
-(<<<) : Iso b c -> Iso a b -> Iso a c
-(<<<) g f =
+composeLeft : Iso b c -> Iso a b -> Iso a c
+composeLeft g f =
     Iso (apply f >> Maybe.andThen (apply g)) (unapply g >> Maybe.andThen (unapply f))
 
 
 {-| Compose two isomorphisms in the other direction.
 -}
-(>>>) : Iso a b -> Iso b c -> Iso a c
-(>>>) =
-    flip (<<<)
-
-
-infixr 9 <<<
-
-
-infixl 9 >>>
-
+composeRight : Iso a b -> Iso b c -> Iso a c
+composeRight =
+    \b a -> composeLeft a b
 
 
 -- LIFTING TO TYPE CONSTRUCTORS
@@ -113,11 +102,11 @@ infixl 9 >>>
 {-| Combine two separate isomorphisms to work on the two components
 of a tuple.
 -}
-(***) : Iso a c -> Iso b d -> Iso ( a, b ) ( c, d )
-(***) fst snd =
+parallel : Iso a c -> Iso b d -> Iso ( a, b ) ( c, d )
+parallel fst snd =
     Iso
-        (\( a, b ) -> Maybe.map2 (,) (apply fst a) (apply snd b))
-        (\( c, d ) -> Maybe.map2 (,) (unapply fst c) (unapply snd d))
+        (\( a, b ) -> Maybe.map2 Tuple.pair (apply fst a) (apply snd b))
+        (\( c, d ) -> Maybe.map2 Tuple.pair (unapply fst c) (unapply snd d))
 
 
 {-| Products commute.
@@ -139,7 +128,7 @@ with `Nothing`, and it identifies `Just a` with `Just b` if and only if `a` is
 isomorphic to `b` according to the provided isomorphism.
 -}
 liftMaybe : Iso a b -> Iso (Maybe a) (Maybe b)
-liftMaybe iso =
+liftMaybe base =
     let
         applyMaybe : (c -> Maybe d) -> Maybe c -> Maybe (Maybe d)
         applyMaybe f m =
@@ -155,15 +144,15 @@ liftMaybe iso =
                         Just b ->
                             Just (Just b)
     in
-        Iso (applyMaybe <| apply iso) (applyMaybe <| unapply iso)
+    Iso (applyMaybe <| apply base) (applyMaybe <| unapply base)
 
 
 {-| Lift an isomorphism over `List`. `[a_1, a_2, ..., a_n]` will be isomorphic to
 `[b_1, b_2, ..., b_n]` if and only if `a_i` is isomorphic to `b_i` for each i.
 -}
 liftList : Iso a b -> Iso (List a) (List b)
-liftList iso =
-    Iso (Maybe.Extra.traverse <| apply iso) (Maybe.Extra.traverse <| unapply iso)
+liftList base =
+    Iso (Maybe.Extra.traverse <| apply base) (Maybe.Extra.traverse <| unapply base)
 
 
 
@@ -187,6 +176,7 @@ element x =
         (\y ->
             if x == y then
                 Just ()
+
             else
                 Nothing
         )
@@ -202,10 +192,11 @@ subset p =
         check x =
             if p x then
                 Just x
+
             else
                 Nothing
     in
-        Iso check check
+    Iso check check
 
 
 
@@ -223,4 +214,4 @@ string =
 -}
 int : Iso String Int
 int =
-    Iso (String.toInt >> Result.toMaybe) (toString >> Just)
+    Iso String.toInt (String.fromInt >> Just)

@@ -1,61 +1,53 @@
-module UrlParser
-    exposing
-        ( Parser
-        , string
-        , int
-        , s
-        , custom
-        , (</>)
-        , oneOf
-        , top
-        , (<$>)
-        , cons0
-        , cons1
-        , cons2
-        , cons3
-        , cons4
-        , cons5
-        , (<?>)
-        , stringParam
-        , intParam
-        , customParam
-        , requiredParam
-        , optionalParam
-        , manyParam
-        , (<#>)
-        , stringHash
-        , intHash
-        , customHash
-        , withDefault
-        , parse
-        , reverse
-        , defaultRoute
-        )
+module UrlParser exposing
+    ( Parser
+    , string, int, s, custom
+    , oneOf, top
+    , cons0, cons1, cons2, cons3
+    --, cons4, cons5
+    , stringParam, intParam
+    , customParam, requiredParam, optionalParam, manyParam, withDefault
+    , stringHash, intHash, customHash
+    , parse, reverse, defaultRoute
+    , (</>), (<?>)
+    , hash, andThen
+    )
 
-{-|
+{-| A reversible URL parser.
 
-A reversible URL parser.
 
 # Parser
+
 @docs Parser
 
+
 # Path Parsers
+
 @docs string, int, s, custom
 
+
 # Combining Parses
+
 @docs (</>), oneOf, top
 
+
 # Data Constructors
+
 @docs (<$>), cons0, cons1, cons2, cons3, cons4, cons5
 
+
 # Query Parameter Parsers
+
 @docs (<?>), stringParam, intParam
 @docs customParam, requiredParam, optionalParam, manyParam, withDefault
 
+
 # Hash Parsers
+
 @docs (<#>), stringHash, intHash, customHash
 
+
 # Run a Parser
+
 @docs parse, reverse, defaultRoute
 
 
@@ -68,12 +60,12 @@ and [this paper](http://www.informatik.uni-marburg.de/~rendel/unparse/rendel10in
 
 -}
 
-import Function.Extra
+import Iso exposing (Iso)
 import Maybe.Extra
-import Iso exposing (Iso, (<<<), (>>>), (***))
 import ParserPrinter as ParserPrinter
 import ParserPrinter.Combinators as Combinators
 import UrlSegment
+
 
 
 -- PARSERS
@@ -98,6 +90,7 @@ type alias Parser a b =
     -- /alice/  ==>  Just "alice"
     -- /bob     ==>  Just "bob"
     -- /42/     ==>  Just "42"
+
 -}
 string : Parser a ( String, a )
 string =
@@ -110,6 +103,7 @@ string =
     -- /alice/  ==>  Nothing
     -- /bob     ==>  Nothing
     -- /42/     ==>  Just 42
+
 -}
 int : Parser a ( Int, a )
 int =
@@ -120,10 +114,11 @@ int =
 
     s "blog"  -- can parse /blog/
               -- but not /glob/ or /42/ or anything else
+
 -}
 s : String -> Parser a a
 s str =
-    Combinators.pop (Iso.element str) <$> ParserPrinter.path
+    Combinators.pop (Iso.element str) </> ParserPrinter.path
 
 
 {-| Create a custom path segment parser. You need to provide a partial
@@ -131,16 +126,17 @@ isomorphism between `String` and your type (see `Iso`). Here is how it
 is used to define the `int` and `string` parsers:
 
     int =
-      custom Iso.int
+        custom Iso.int
 
     string =
-      custom Iso.string
+        custom Iso.string
 
 You can use it to define something like “only CSS files” like this:
 
     css : Parser String
     css =
-      custom <| Iso.subset <| String.endsWith ".css"
+        custom <| Iso.subset <| String.endsWith ".css"
+
 -}
 custom : Iso String a -> Parser r ( a, r )
 custom iso =
@@ -164,11 +160,11 @@ custom iso =
     -- /search/frog   ==>  Just "frog"
     -- /search/       ==>  Nothing
     -- /cats/         ==>  Nothing
+
 -}
-(</>) : Parser b c -> Parser a b -> Parser a c
-(</>) =
+slash : Parser b c -> Parser a b -> Parser a c
+slash =
     ParserPrinter.compose
-infixr 7 </>
 
 
 
@@ -232,6 +228,7 @@ You could use it to define optional parsers, for example.
     parse (oneOf [ s "blog", top ] </> int) location
     -- /blog/42  ==>  Just 42
     -- /42       ==>  Just 42
+
 -}
 top : Parser a a
 top =
@@ -245,27 +242,33 @@ top =
 {-| Combine a pure parser with a parser that consumes input.
 You will usually use this with data constructors. For example:
 
-    type Route = Search String | User String Int
+    type Route
+        = Search String
+        | User String Int
+
 
     -- Projections
     rSearch : Route -> Maybe String
-    rUser : Route -> Maybe (String, Int)
 
-    route : Parser a (Route, a)
+    rUser : Route -> Maybe ( String, Int )
+
+    route : Parser a ( Route, a )
     route =
-      oneOf
-        [ cons1 Search rSearch <$> s "search" </> string
-        , cons2 User rUser     <$> s "user" </> string </> int
-        ]
+        oneOf
+            [ cons1 Search rSearch <$> s "search" </> string
+            , cons2 User rUser <$> s "user" </> string </> int
+            ]
 
 Under the hood, this is equivalent to `(</>)` , which means it can
 be used with any parser (even impure ones). This has the benefit of
 not implying a forward slash.
+
 -}
-(<$>) : Parser b c -> Parser a b -> Parser a c
-(<$>) =
+andThen : Parser b c -> Parser a b -> Parser a c
+andThen =
     (</>)
-infixr 7 <$>
+
+
 
 
 {-| A constructor with no arguments.
@@ -287,7 +290,7 @@ cons1 inj proj =
 cons2 : (a -> b -> t) -> (t -> Maybe ( a, b )) -> Parser ( a, ( b, r ) ) ( t, r )
 cons2 inj proj =
     Combinators.pull2
-        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso (uncurry inj >> Just) proj)
+        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso ((\( a, b ) -> inj a b) >> Just) proj)
 
 
 {-| A constructor with three arguments.
@@ -295,15 +298,16 @@ cons2 inj proj =
 cons3 : (a -> b -> c -> t) -> (t -> Maybe ( a, b, c )) -> Parser ( a, ( b, ( c, r ) ) ) ( t, r )
 cons3 inj proj =
     Combinators.pull3
-        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso (Function.Extra.uncurry3 inj >> Just) proj)
+        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso (uncurry3 inj >> Just) proj)
 
 
+{- TODO: murder Evan
 {-| A constructor with four arguments.
 -}
 cons4 : (a -> b -> c -> d -> t) -> (t -> Maybe ( a, b, c, d )) -> Parser ( a, ( b, ( c, ( d, r ) ) ) ) ( t, r )
 cons4 inj proj =
     Combinators.pull4
-        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso (Function.Extra.uncurry4 inj >> Just) proj)
+        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso (uncurry4 inj >> Just) proj)
 
 
 {-| A constructor with five arguments.
@@ -311,8 +315,8 @@ cons4 inj proj =
 cons5 : (a -> b -> c -> d -> e -> t) -> (t -> Maybe ( a, b, c, d, e )) -> Parser ( a, ( b, ( c, ( d, ( e, r ) ) ) ) ) ( t, r )
 cons5 inj proj =
     Combinators.pull5
-        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso (Function.Extra.uncurry5 inj >> Just) proj)
-
+        |> ParserPrinter.compose (Combinators.pureHead <| Iso.iso (uncurry5 inj >> Just) proj)
+-}
 
 
 -- QUERY PARAMETERS
@@ -337,10 +341,13 @@ cons5 inj proj =
     -- /blog/              ==>  Just (BlogList Nothing)
     -- /blog/?search=cats  ==>  Just (BlogList (Just "cats"))
     -- /blog/42            ==>  Just (BlogPost 42)
+
 -}
 (<?>) : Parser b c -> Parser a b -> Parser a c
 (<?>) =
     (</>)
+
+
 infixr 7 <?>
 
 
@@ -349,6 +356,7 @@ infixr 7 <?>
     parse (s "blog" <?> stringParam "search") location
     -- /blog/              ==>  Just Nothing
     -- /blog/?search=cats  ==>  Just (Just "cats")
+
 -}
 stringParam : String -> Parser a ( Maybe String, a )
 stringParam name =
@@ -362,6 +370,7 @@ should appear first.
     parse (s "results" <?> intParam "start") location
     -- /results           ==>  Just Nothing
     -- /results?start=10  ==>  Just (Just 10)
+
 -}
 intParam : String -> Parser a ( Maybe Int, a )
 intParam name =
@@ -396,7 +405,7 @@ requiredParam name iso =
         one =
             Iso.iso matchSingleton (\x -> Just [ x ])
     in
-        customParam name (iso <<< one)
+    customParam name (Iso.composeLeft iso one)
 
 
 {-| Parse a query parameter that is given at most once. If the parameter is
@@ -406,10 +415,11 @@ This is usually what you want to use for parameters. In fact, the primitive
 parameter parsers are all built with this:
 
     stringParam =
-      optionalParam name Iso.string
+        optionalParam name Iso.string
 
     intParam =
-      optionalParam name Iso.int
+        optionalParam name Iso.int
+
 -}
 optionalParam : String -> Iso String a -> Parser r ( Maybe a, r )
 optionalParam name iso =
@@ -428,9 +438,9 @@ optionalParam name iso =
 
         one : Iso (List String) (Maybe String)
         one =
-            Iso.iso matchSingleton (Maybe.Extra.maybeToList >> Just)
+            Iso.iso matchSingleton (Maybe.Extra.toList >> Just)
     in
-        customParam name (Iso.liftMaybe iso <<< one)
+    customParam name (Iso.composeLeft (Iso.liftMaybe iso) one)
 
 
 {-| Parse a query parameter that is given 0 or more times. You need
@@ -440,6 +450,7 @@ parser fails. Otherwise, you get a list of parsed values. For example:
 
     parse (s "posts" </> manyParam "user" Iso.int) location
     -- /posts?user=1&user=2  ==>  Just [1, 2]
+
 -}
 manyParam : String -> Iso String a -> Parser r ( List a, r )
 manyParam name iso =
@@ -450,12 +461,12 @@ manyParam name iso =
 -- HASH
 
 
-{-| Parse the hash. Just a nicer looking alias for `</>`.
+{-| Parse the hash. Just an alias for `</>`.
 -}
-(<#>) : Parser b c -> Parser a b -> Parser a c
-(<#>) =
+hash : Parser b c -> Parser a b -> Parser a c
+hash =
     (</>)
-infixr 7 <#>
+
 
 
 {-| Parse the hash as a `String`.
@@ -463,6 +474,7 @@ infixr 7 <#>
     parse (s "blog" <?> hash ) location
     -- /blog/        ==>  Just Nothing
     -- /blog#user32  ==>  Just (Just "user32")
+
 -}
 stringHash : Parser a ( Maybe String, a )
 stringHash =
@@ -474,6 +486,7 @@ stringHash =
     parse (s "users" <?> hash ) location
     -- /users/    ==>  Just Nothing
     -- /users#32  ==>  Just (Just 32)
+
 -}
 intHash : Parser a ( Maybe Int, a )
 intHash =
@@ -484,10 +497,11 @@ intHash =
 `Nothing`. The primitive hash parsers are all built with this:
 
     stringHash =
-      customHash Iso.string
+        customHash Iso.string
 
     intHash =
-      customHash Iso.int
+        customHash Iso.int
+
 -}
 customHash : Iso String a -> Parser r ( Maybe a, r )
 customHash iso =
@@ -507,6 +521,7 @@ withDefault default =
                 Just <|
                     if a == default then
                         Nothing
+
                     else
                         Just a
             )
@@ -535,3 +550,29 @@ reverse p x =
 defaultRoute : Parser () ( route, () ) -> Maybe route
 defaultRoute p =
     parse p UrlSegment.empty
+
+
+
+-- HELPERS
+
+{-| Like `uncurry` but with three arguments.
+-}
+uncurry3 : (a1 -> a2 -> a3 -> b) -> (a1, a2, a3) -> b
+uncurry3 f (a1, a2, a3) =
+    f a1 a2 a3
+
+
+{- TODO: murder Evan
+{-| Like `uncurry` but with four arguments.
+-}
+uncurry4 : (a1 -> a2 -> a3 -> a4 -> b) -> (a1, a2, a3, a4) -> b
+uncurry4 f (a1, a2, a3, a4) =
+    f a1 a2 a3 a4
+
+
+{-| Like `uncurry` but with five arguments.
+-}
+uncurry5 : (a1 -> a2 -> a3 -> a4 -> a5 -> b) -> (a1, a2, a3, a4, a4) -> b
+uncurry5 f (a1, a2, a3, a4, a5) =
+    f a1 a2 a3 a4 a5
+-}

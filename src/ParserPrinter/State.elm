@@ -1,9 +1,8 @@
-module ParserPrinter.State
-    exposing
-        ( State
-        , map
-        , mapMaybe
-        )
+module ParserPrinter.State exposing
+    ( State
+    , map
+    , mapMaybe
+    )
 
 import UrlSegment exposing (Segment)
 

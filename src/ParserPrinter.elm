@@ -1,42 +1,46 @@
-module ParserPrinter
-    exposing
-        ( ParserPrinter
-        , identity
-        , compose
-        , empty
-        , alternative
-        , map
-        , path
-        , query
-        , hash
-        , parse
-        , print
-        )
+module ParserPrinter exposing
+    ( ParserPrinter, parse, print
+    , identity, compose
+    , empty, alternative
+    , map
+    , path, query
+    , hash
+    )
 
-{-|
-Combines a parser and a printer. Essentially just a tuple under the hood.
+{-| Combines a parser and a printer. Essentially just a tuple under the hood.
+
 
 # ParserPrinter
+
 @docs ParserPrinter, parse, print
 
+
 # Category
+
 @docs identity, compose
 
+
 # Alternative
+
 @docs empty, alternative
 
+
 # Iso Functor
+
 @docs map
 
+
 # Url
+
 @docs path, query
 
 -}
 
 import Iso exposing (Iso)
-import UrlSegment exposing (Segment)
 import ParserPrinter.Parser as Parser
 import ParserPrinter.Printer as Printer
+import UrlSegment exposing (Segment)
+
 
 
 -- PARSER/PRINTER
@@ -125,6 +129,7 @@ to `Nothing` the parser will fail. For example, the parser
     map (Iso.iso (always Nothing) (always Nothing)) identity
 
 is the same as `empty`.
+
 -}
 map : Iso a b -> ParserPrinter r a -> ParserPrinter r b
 map iso (ParserPrinter p) =
@@ -143,6 +148,7 @@ map iso (ParserPrinter p) =
     parse path segment
     -- /user ==> Just ("user", ())
     -- /user/ ==> Just ("user", ())
+
 -}
 path : ParserPrinter a ( String, a )
 path =
@@ -158,6 +164,7 @@ can appear any number of times in the query.
     parse query segment
     -- /?user="alex" ==> Just (["alex"], ())
     -- / ==> Just ([], ())
+
 -}
 query : String -> ParserPrinter a ( List String, a )
 query key =
@@ -173,6 +180,7 @@ may not be given.
     parse hash segment
     -- /home#introduction ==> Just (Just "introduction", ())
     -- / ==> Just (Nothing, ())
+
 -}
 hash : ParserPrinter a ( Maybe String, a )
 hash =

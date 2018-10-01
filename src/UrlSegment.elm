@@ -1,27 +1,26 @@
-module UrlSegment
-    exposing
-        ( Segment
-        , empty
-        , merge
-        , fromPath
-        , toPath
-        , fromLocationPath
-        , updateLocationPath
-        )
+module UrlSegment exposing
+    ( Segment, empty, merge
+    , fromAbsolute, toAbsolute, fromUrl, updateUrl
+    )
 
 {-|
 
+
 # Segments
+
 @docs Segment, empty, merge
 
+
 # Parsing and Printing
-@docs fromPath, toPath, fromLocationPath, updateLocationPath
+
+@docs fromAbsolute, toAbsolute, fromUrl, updateUrl
+
 -}
 
 import Dict
 import Maybe.Extra
-import Erl
-import Navigation exposing (Location)
+import Url exposing (Url)
+import Url.Builder
 
 
 {-| A url segment with a path and query parameters.
@@ -68,63 +67,144 @@ insertWith f k a =
 -- PARSING and PRINTING
 
 
-{-| Convert from a `String`. The string should be concatenation of `path`
-and `search` components of a `Navigation.Location`.
+{-| Convert an absolute URL (that is composed of path, query, and fragment components)
+into a `Segment`. Opposite of `toAbsolute`.
 -}
-fromPath : String -> Segment
-fromPath url =
-    let
-        parsed =
-            Erl.parse url
-    in
-        { path = parsed.path
-        , query = List.foldr (\( k, v ) -> insertWith (++) k [ v ]) Dict.empty parsed.query
-        , hash =
-            if String.isEmpty parsed.hash then
-                Nothing
-            else
-                Just parsed.hash
-        }
+fromAbsolute : String -> Segment
+fromAbsolute absolute =
+    case Url.fromString ("https:/dummy" ++ absolute) of
+        Nothing ->
+            empty
+
+        Just url ->
+            fromUrl url
 
 
-{-| Convert to a `String`. The string will look like the concatenation of
-`path` and `search` components of a `Navigation.Location`.
+{-| Convert a `Segment` into an absolute URL. Opposite of `fromAbsolute`.
 -}
-toPath : Segment -> String
-toPath segment =
-    let
-        splitQuery : List ( String, String )
-        splitQuery =
-            segment.query
-                |> Dict.toList
-                |> List.concatMap (\( k, values ) -> List.map (\v -> ( k, v )) values)
-    in
-        Erl.new
-            |> Erl.appendPathSegments segment.path
-            |> (\erl -> { erl | query = splitQuery })
-            |> (\erl -> { erl | query = splitQuery })
-            |> (\erl -> { erl | hash = Maybe.withDefault "" segment.hash })
-            |> Erl.toString
-            |> String.cons '/'
+toAbsolute : Segment -> String
+toAbsolute segment =
+    Url.Builder.custom
+        Url.Builder.Absolute
+        segment.path
+        (queryParameters segment.query)
+        segment.hash
 
 
-{-| Convert from the `path` and `search` components of a `Navigation.Location`.
+{-| Extract the relevant components from a `Url` into a `Segment`.
 -}
-fromLocationPath : Location -> Segment
-fromLocationPath location =
-    fromPath (location.pathname ++ location.search ++ location.hash)
+fromUrl : Url -> Segment
+fromUrl url =
+    { path = parsePath url.path
+    , query = parseQueryString url.query
+    , hash = url.fragment
+    }
 
 
-{-| Replace the `path` and `search` components of a `Navigation.Location`.
+{-| Replace relevant components in a `Url` with the ones form a `Segment`.
 -}
-updateLocationPath : Segment -> Location -> Location
-updateLocationPath segment location =
-    let
-        printed =
-            toPath segment
-    in
-        { location
-            | pathname = Erl.extractPath printed
-            , search = Erl.extractQuery printed
-            , hash = Erl.extractHash printed
-        }
+updateUrl : Segment -> Url -> Url
+updateUrl segment url =
+    { url
+        | path = Url.Builder.absolute segment.path []
+        , query =
+            let
+                queryString =
+                    Url.Builder.toQuery (queryParameters segment.query)
+            in
+                if queryString == "" then
+                    Nothing
+                else
+                    Just queryString
+        , fragment = segment.hash
+    }
+
+
+
+-- LOW LEVEL HELPERS
+--
+-- Most of this stuff is copied from
+-- [elm/url](https://github.com/elm/url/blob/1.0.0/src/Url/Parser.elm).
+-- TODO: don't copy-paste.
+
+
+parsePath : String -> List String
+parsePath path =
+  -- TODO: do we need to percent decode?
+  case String.split "/" path of
+    "" :: segments ->
+      removeFinalEmpty segments
+
+    segments ->
+      removeFinalEmpty segments
+
+
+removeFinalEmpty : List String -> List String
+removeFinalEmpty segments =
+  case segments of
+    [] ->
+      []
+
+    "" :: [] ->
+      []
+
+    segment :: rest ->
+      segment :: removeFinalEmpty rest
+
+
+{-| Convert a query string (for example, obtained from the `query` component
+of `Url.Url`) into key-value pairs. There may be one or more values per key. Keys
+without values and badly encoded keys/values are ignored.
+
+This function applies `Url.percentDecode` to keys and values.
+-}
+parseQueryString : Maybe String -> Dict.Dict String (List String)
+parseQueryString maybeQuery =
+  case maybeQuery of
+    Nothing ->
+      Dict.empty
+
+    Just qry ->
+      List.foldr addParam Dict.empty (String.split "&" qry)
+
+
+addParam : String -> Dict.Dict String (List String) -> Dict.Dict String (List String)
+addParam segment dict =
+  case String.split "=" segment of
+    [rawKey, rawValue] ->
+      case Url.percentDecode rawKey of
+        Nothing ->
+          dict
+
+        Just key ->
+          case Url.percentDecode rawValue of
+            Nothing ->
+              dict
+
+            Just value ->
+              Dict.update key (addToParametersHelp value) dict
+
+    _ ->
+      dict
+
+
+addToParametersHelp : a -> Maybe (List a) -> Maybe (List a)
+addToParametersHelp value maybeList =
+  case maybeList of
+    Nothing ->
+      Just [value]
+
+    Just list ->
+      Just (value :: list)
+
+
+{-| Generate a list of `Url.Builder.QueryParameter` form a dictionary of parameters.
+-}
+queryParameters : Dict.Dict String (List String) -> List Url.Builder.QueryParameter
+queryParameters query =
+    query
+        |> Dict.toList
+        |> List.concatMap (\( k, values ) -> List.map (\v -> ( k, v )) values)
+        |> List.map (\(k, v) ->  Url.Builder.string k v)
+
+

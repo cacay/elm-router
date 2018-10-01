@@ -1,15 +1,17 @@
-module UrlRouter
-    exposing
-        ( App
-        , ChangeRoute
-        , Href
-        , Program
-        , program
-        )
+module UrlRouter exposing
+    (Program, application, Application
+    , Key, changeRoute, routeUrl
+    )
 
-{-| Create a `Program` that manages routing for you.
+{-| Create an application that manages routing for you.
 
-@docs Program, program, App, Href, ChangeRoute
+# Applications
+
+@docs Program, application, Application
+
+# Navigation
+
+@docs changeRoute, routeUrl, Key
 
 -}
 
@@ -17,18 +19,22 @@ import Html exposing (Attribute, Html)
 import Html.Attributes as Attribute
 import Html.Lazy
 import Json.Decode as Json
-import LinkMonitor
-import Navigation exposing (Location)
+
+import Browser exposing (Document)
+import Browser.Dom
+import Browser.Navigation
+import Url exposing (Url)
 import Task
 import UrlParser
 import UrlSegment exposing (Segment)
 
 
-{-| The configuration required to use this module to create a `Program`.
+{-| Stuff you need to supply to `application` to create a `Program`.
 
-The `init`, `update`, `subscriptions` and `view` fields have the same meaning
-as they do in [`Html.program`](http://package.elm-lang.org/packages/elm-lang/html/2.0.0/Html#program)
---- that is, you should provide what you normally provide to those functions.
+The `init`, `view`, `update`, and `subscriptions` fields have the same meaning
+as they do in
+[`Browser.application`](https://package.elm-lang.org/packages/elm/browser/latest/Browser#application)
+--- that is, you should provide what you normally would for those functions.
 
 So, the "special" fields are the `router`, `errorRoute`, and the
 `newHistoryEntry` function.
@@ -37,40 +43,41 @@ So, the "special" fields are the `router`, `errorRoute`, and the
 
   - `errorRoute` is used when `router` fails to parse a URL entered by the user.
     If the router fails with a route you created, the app will crash as to catch errors
-    early. Let me know if you would prefer a different behavior (maybe send a message to
-    your app so you forward that to the servers?).
+    early. Let me know if you would prefer a different behavior (perhaps send a message to
+    your app so you forward that to the server?).
 
   - `newHistoryEntry` should decide, given the new route and the previous, whether
     a new entry should be created or the latest one modified.
 
 -}
-type alias App model route msg =
-    { init : ( model, Cmd msg )
-    , update : ChangeRoute route msg -> msg -> model -> ( model, Cmd msg )
+type alias Application flags model route msg =
+    { init : flags -> Key -> ( model, Cmd msg )
+    , view : model -> route -> Document msg
+    , update : msg -> model -> ( model, Cmd msg )
     , subscriptions : model -> Sub msg
-    , view : Href route msg -> model -> route -> Html msg
     , router : UrlParser.Parser () ( route, () )
     , errorRoute : route
     , newHistoryEntry : route -> route -> Bool
     }
 
 
-{-| Like `Platform.Program` but also handles routing.
+{-| Like `Platform.Program` but with nicer routing.
 -}
-type alias Program model route msg =
-    Platform.Program Never (Model model route) (Msg msg route)
+type alias Program flags model route msg =
+    Platform.Program flags (Model model route) (Msg msg route)
 
 
-{-| Like `Platform.program` but also handles routing.
+{-| Like `Browser.application` but also handles routing.
 -}
-program : App model route msg -> Program model route msg
-program app =
-    Navigation.program
-        NewUrl
+application : Application flags model route msg -> Program model route msg
+application app =
+    Browser.application
         { init = init app
         , update = update app
         , view = view app
         , subscriptions = subscriptions app
+        , onUrlRequest = UrlRequest
+        , onUrlChange = UrlChange
         }
 
 
@@ -81,42 +88,57 @@ program app =
 type alias Model userModel route =
     { userModel : userModel
     , route : route
-    , reportedUrl : Location
-    , scrolledId : Maybe LinkMonitor.Id
-    , retryScroll : Maybe LinkMonitor.Id
+    , rootKey : Browser.Navigation.Key
+    , scrolledId : Maybe String
+    , retryScroll : Maybe String
     }
 
 
-init : App model route msg -> Location -> ( Model model route, Cmd (Msg msg route) )
-init app location =
+init : Application flags model route msg -> flags -> Url -> Key -> ( Model model route, Cmd (Msg msg route) )
+init app flags url rootKey =
     let
-        userCmd =
-            Cmd.map UserMsg (Tuple.second app.init)
+        key =
+            (rootKey, app.router)
+
+        (userModel, userCmd) =
+            app.init flags key
 
         model =
-            { userModel = Tuple.first app.init
+            { userModel = userModel
             , route = app.errorRoute
-            , reportedUrl = location
+            , rootKey = rootKey
             , scrolledId = Nothing
             , retryScroll = Nothing
             }
+
+        cmd =
+            Cmd.map UserMsg userCmd
     in
-    case getRoute app location of
-        NotFound ->
+    case getRoute app url of
+        Nothing ->
             ( model
             , userCmd
             )
 
-        Found route ->
-            ( { model | route = route }
-            , Cmd.batch [ scrollToHash location, userCmd ]
-            )
+        Just (route, normalizedUrl) ->
+            if url == normalizedUrl then
+                ( { model | route = route }
+                , Cmd.batch [ scrollToFragment url, userCmd ]
+                )
+            else
+                ( { model | route = route }
+                , Cmd.batch [ Browser.Navigation.replaceUrl (Url.toString normalizedUrl), userCmd ]
+                )
 
-        FoundWithRedirect route redirect ->
-            ( { model | route = route }
-            , Cmd.batch [ redirect, userCmd ]
-            )
 
+
+-- VIEW
+
+
+view : Application flags model route msg -> Model model route -> Html (Msg msg route)
+view app model =
+    Html.Lazy.lazy2 app.view model.userModel model.route
+        |> Html.map UserMsg
 
 
 -- UPDATE
@@ -124,20 +146,20 @@ init app location =
 
 type Msg userMsg route
     = UserMsg userMsg
-    | NewUrl Location
-    | NewRoute route
-    | LinkClick String
-    | ScrollSuccess LinkMonitor.Id
-    | ScrollFailure LinkMonitor.Id
+    | UrlRequest Browser.UrlRequest
+    | UrlChange Url
+    -- | NewRoute route
+    | ScrollSuccess String
+    | ScrollFailure String
 
 
-update : App model route msg -> Msg msg route -> Model model route -> ( Model model route, Cmd (Msg msg route) )
+update : Application flags model route msg -> Msg msg route -> Model model route -> ( Model model route, Cmd (Msg msg route) )
 update app msg model =
     case msg of
         UserMsg userMsg ->
             let
                 ( newUserModel, userCmd ) =
-                    app.update (changeRoute app model.route) userMsg model.userModel
+                    app.update userMsg model.userModel
 
                 retryScroll =
                     case model.retryScroll of
@@ -149,180 +171,150 @@ update app msg model =
             in
             ( if model.userModel == newUserModel then
                 model
+
               else
                 { model | userModel = newUserModel }
             , Cmd.batch [ retryScroll, Cmd.map UserMsg userCmd ]
             )
 
-        NewUrl location ->
-            case getRoute app location of
-                NotFound ->
-                    ( { model | route = app.errorRoute, reportedUrl = location }, Cmd.none )
-
-                Found newRoute ->
-                    ( { model | route = newRoute, reportedUrl = location, retryScroll = Nothing }
-                    , scrollToHashIfDifferent model.scrolledId location
-                    )
-
-                FoundWithRedirect newRoute redirect ->
-                    ( { model | route = newRoute, reportedUrl = location }
-                    , redirect
-                    )
-
-        NewRoute newRoute ->
-            -- TODO: should we update route here? It will also be updated once
-            -- we get the NewUrl message that we just set off... Depending on the
-            -- order of events, one or the other could be more correct. But this way,
-            -- we only have one point of entry for route changes.
-            ( model, changeRoute app model.route newRoute )
-
-        LinkClick url ->
-            case UrlParser.parse app.router (UrlSegment.fromPath url) of
+        UrlRequest (Browser.Internal url) ->
+            case getRoute url of
                 Nothing ->
-                    -- TODO: crashing here might be a bad idea since users could
-                    -- manually modify the `href` attribute to an invalid url and
-                    -- cause the app to crash. But if they are modifying stuff, then
-                    -- all bets are off... Better to catch potential mistakes in the
-                    -- parser.
-                    Debug.crash <| faultyIsoParse url
+                    -- This is either a URL we are not meant to handle or
+                    -- a bug in the router. We will assume it's not a bug
+                    -- and generate a full page load. Hopefully the server
+                    -- loads a different app. If not, `init` will supply
+                    -- the error route.
+                    (model, Browser.Navigation.load <| Url.toString url)
 
-                Just route ->
-                    update app (NewRoute route) model
+                Just (newRoute, normalizedUrl) ->
+                    let
+                        -- How do we modify history
+                        method =
+                            if app.newHistoryEntry model.route newRoute then
+                                Browser.Navigation.pushUrl
+                            else
+                                Browser.Navigation.replaceUrl
+                    in
+                        (model, method model.rootKey <| Url.toString normalizedUrl)
+
+        UrlRequest (Browser.External url) ->
+            (model, Browser.Navigation.load url)
+
+        UrlChange url ->
+            case getRoute app url of
+                Nothing ->
+                    ( { model | route = app.errorRoute }, Cmd.none )
+
+                Just (newRoute, normalizedUrl) ->
+                    if url == normalizedUrl then
+                        ( { model | route = newRoute, retryScroll = Nothing }
+                        , scrollToFragmentIfDifferent model.scrolledId url
+                        )
+                    else
+                        -- TODO: should we update route here? It will be updated
+                        -- once the browser URL changes.
+                        ( model
+                        , Browser.Navigation.replaceUrl model.rootKey normalizedUrl
+                        )
 
         ScrollSuccess id ->
             let
                 _ =
-                    if False then
-                        Debug.log "Scrolled to" id
-                    else
-                        ""
+                    Debug.log "Scrolled to" id
             in
             ( { model | scrolledId = Just id, retryScroll = Nothing }, Cmd.none )
 
         ScrollFailure id ->
             let
                 _ =
-                    if False then
-                        Debug.log "Failed to scroll, will retry after a user message" id
-                    else
-                        ""
+                    Debug.log "Failed to scroll, will retry after a user message" id
             in
             ( { model | retryScroll = Just id }, Cmd.none )
 
 
-scrollToHashIfDifferent : Maybe LinkMonitor.Id -> Navigation.Location -> Cmd (Msg userMsg route)
-scrollToHashIfDifferent scrolledId location =
-    if scrolledId /= Just (idFromHash location) then
-        scrollToHash location
+scrollToFragmentIfDifferent : Maybe String -> Url -> Cmd (Msg userMsg route)
+scrollToFragmentIfDifferent scrolledId url =
+    if scrolledId /= Just url.fragment then
+        scrollToFragment url
+
     else
         Cmd.none
 
 
-scrollToHash : Navigation.Location -> Cmd (Msg userMsg route)
-scrollToHash location =
-    scrollToId (idFromHash location)
+scrollToFragment : Url -> Cmd (Msg userMsg route)
+scrollToFragment url =
+    scrollToId url.fragment
 
 
-scrollToId : LinkMonitor.Id -> Cmd (Msg userMsg route)
+scrollToId : String -> Cmd (Msg userMsg route)
 scrollToId id =
     if not (String.isEmpty id) then
-        LinkMonitor.scrollTo id
-            |> Task.map (always <| ScrollSuccess id)
-            |> Task.onError
-                (\(LinkMonitor.NotFound id) -> Task.succeed (ScrollFailure id))
-            |> Task.perform identity
+        Browser.Dom.focus id
+            |> Task.attempt (\r -> case r of
+                Ok () ->
+                    ScrollSuccess id
+                Err (Browser.Dom.NotFound id) ->
+                    ScrollFailure id
+            )
+
     else
         Task.succeed (ScrollSuccess "")
             |> Task.perform identity
 
 
 
--- VIEW
-
-
-view : App model route msg -> Model model route -> Html (Msg msg route)
-view app model =
-    Html.Lazy.lazy3 app.view (href app) model.userModel model.route
-        |> Html.Lazy.lazy (Html.map UserMsg)
-
-
 
 -- SUBSCRIPTIONS
 
 
-isNavigationClick : Json.Decoder ()
-isNavigationClick =
-    let
-        expect : a -> Json.Decoder a -> Json.Decoder ()
-        expect a decoder =
-            decoder
-                |> Json.andThen
-                    (\b ->
-                        if a == b then
-                            Json.succeed ()
-                        else
-                            Json.fail <| "expected " ++ toString a ++ " but found " ++ toString b
-                    )
-
-        all : List (Json.Decoder ()) -> Json.Decoder ()
-        all decoders =
-            List.foldr (\l acc -> l |> Json.andThen (always acc)) (Json.succeed ()) decoders
-    in
-    all
-        [ expect "true" <| Json.at [ "target", "dataset", "elmRouter" ] Json.string
-        , expect 0 <| Json.field "button" Json.int
-        , expect False <| Json.field "altKey" Json.bool
-        , expect False <| Json.field "ctrlKey" Json.bool
-        , expect False <| Json.field "altKey" Json.bool
-        , expect False <| Json.field "metaKey" Json.bool
-        , expect False <| Json.field "shiftKey" Json.bool
-        ]
-
-
-subscriptions : App model route msg -> Model model route -> Sub (Msg msg route)
+subscriptions : Application flags model route msg -> Model model route -> Sub (Msg msg route)
 subscriptions app model =
-    Sub.batch
-        [ LinkMonitor.clicks isNavigationClick LinkClick
-        , app.subscriptions model.userModel |> Sub.map UserMsg
-        ]
+    app.subscriptions model.userModel
+        |> Sub.map UserMsg
 
+
+
+-- NAVIGATION
+
+{-| Analogous to `Browser.Navigation.Key`. You need to provide this to
+`changeRoute` and `routeUrl` functions.
+-}
+type Key route =
+    Key Browser.Navigation.Key (UrlParser.Parser () ( route, () ))
+
+
+
+{-| Extract a `Browser.Navigation.Key` from a `Key`. Allows you to call
+functions from `Browser.Navigation.
+-}
+navigationKey : Key route -> Browser.Navigation.Key
+navigationKey (Key key _) =
+    key
+
+
+{-| Change current route. This will update the URL accordingly.
+-}
+changeRoute : Key -> route -> Cmd msg
+changeRoute (Key key router) route =
+    -- FIXME: this always pushes a new URL.
+    Browser.Navigation.pushUrl (routeUrl key route)
+
+
+{-| Generate an absolute URL from a route. Useful for passing
+into `Html.Attributes.href`.
+-}
+routeUrl : Key -> route -> Cmd msg
+routeUrl (Key _ router) route =
+    case UrlParser.reverse router route of
+        Nothing ->
+            crash (reverseError route)
+
+        Just segment ->
+            UrlSegment.toAbsolute segment
 
 
 -- HELPERS
-
-
-{-| Your `view` function should use this function to generate links (essentially
-`href` attributes) from routes. These will look like ordinary links to the browser.
-In general, the browser can display the target (unlike "links" added using `onClick`
-handlers), and all usual click actions (right-click, modifier+click etc.) will work
-as expected. Only clicks that cause navigation (e.g. left click without modifiers)
-will be caught by `UrlRouter` and passed along to your app as a new route so that
-they don't cause a page reload.
-
-TODO: example
-
--}
-type alias Href route msg =
-    route -> List (Attribute msg)
-
-
-{-| Generate an `href` from a `route`. See the description of `Href`.
--}
-href : App model route msg -> Href route msg
-href app route =
-    let
-        href : String
-        href =
-            case UrlParser.reverse app.router route of
-                Nothing ->
-                    Debug.crash <| reverseError route
-
-                Just segment ->
-                    UrlSegment.toPath segment
-    in
-    [ Attribute.href href
-    , Attribute.attribute "data-elm-router" "true"
-    ]
 
 
 {-| Sometimes you need to change the current route programmatically, without
@@ -347,73 +339,35 @@ type alias ChangeRoute route msg =
     route -> Cmd msg
 
 
-{-| Switch to the given route. We also need the old route so we can decide
-whether we want a new entry or modify the current one.
+
+{-| Turn a `Url.Url` into a route. Along with the route, this returns
+the canonical URL representation of that route. The browser URL should
+be modified to match this.
 -}
-changeRoute : App model route msg -> route -> ChangeRoute route mgs_
-changeRoute app oldRoute newRoute =
-    let
-        url : String
-        url =
-            case UrlParser.reverse app.router newRoute of
-                Nothing ->
-                    Debug.crash <| reverseError newRoute
-
-                Just segment ->
-                    UrlSegment.toPath segment
-
-        method : String -> Cmd a
-        method =
-            if app.newHistoryEntry oldRoute newRoute then
-                Navigation.newUrl
-            else
-                Navigation.modifyUrl
-    in
-    -- TODO: should we ignore if the routes are equal?
-    method url
-
-
-{-| Turn a location into a route. We also return a command in case we need to `normalize`
-the browser url.
--}
-getRoute : App model route msg -> Location -> GetRoute msg route
-getRoute app location =
-    let
-        getPath : Location -> String
-        getPath location =
-            location.pathname ++ location.search ++ location.hash
-    in
-    case UrlParser.parse app.router (UrlSegment.fromLocationPath location) of
+getRoute : Application flags model route msg -> Url -> Maybe (route, Url)
+getRoute app url =
+    case UrlParser.parse app.router (UrlSegment.fromUrl url) of
         Nothing ->
-            NotFound
+            Nothing
 
         Just route ->
             case UrlParser.reverse app.router route of
                 Nothing ->
-                    Debug.crash <| faultyIsoReverse route (getPath location)
+                    -- This indicates a faulty router.
+                    crash <| faultyIsoReverse route url
 
                 Just normalizedSegment ->
-                    if getPath location == UrlSegment.toPath normalizedSegment then
-                        -- Browser url is already normalized
-                        Found route
-                    else
-                        -- We need to normalize the browser url
-                        FoundWithRedirect route (Navigation.modifyUrl <| UrlSegment.toPath normalizedSegment)
-
-
-type GetRoute userMsg route
-    = NotFound
-    | Found route
-    | FoundWithRedirect route (Cmd (Msg userMsg route))
-
-
-idFromHash : Location -> String
-idFromHash location =
-    String.dropLeft 1 location.hash
+                    (route, UrlSegment.updateUrl normalizedSegment url)
 
 
 
 -- ERROR MESSAGES
+
+
+-- Crash the application with the given message.
+crash : String -> a
+crash =
+    Debug.todo
 
 
 reverseError : route -> String
@@ -421,24 +375,24 @@ reverseError route =
     """
 Your router failed to reverse a route provided by you.
 This could indicate a problem with your router or partial isomorphisms.
-The problematic route is: """ ++ toString route
+The problematic route is: """ ++ Debug.toString route
 
 
 faultyIsoParse : String -> String
 faultyIsoParse url =
     """
 Your router failed to parse a route that it created itself (by reversing a route provided to `href`).
-This should never happen, and usually indicates a problem with your partial isomorphims.
+This should never happen, and usually indicates a problem with your partial isomorphisms.
 The route was generated from: """ ++ url
 
 
-faultyIsoReverse : route -> String -> String
+faultyIsoReverse : route -> Url -> String
 faultyIsoReverse route url =
     """
 Your router failed to reverse a route that it created itself.
-This should never happen, and usually indicates a problem with your partial isomorphims.
+This should never happen, and usually indicates a problem with your partial isomorphisms.
   The route was: """
-        ++ toString route
+        ++ Debug.toString route
         ++ "\n"
         ++ "And it was generated from: "
-        ++ url
+        ++ Url.toString url

@@ -1,12 +1,10 @@
-module Component
-    exposing
-        ( Component
-        , AppMsg
-        )
+module Component exposing (Component, AppMsg)
 
 {-|
 
+
 # Components
+
 @docs Component, AppMsg
 
 -}

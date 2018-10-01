@@ -1,33 +1,37 @@
-module ParserPrinter.Parser
-    exposing
-        ( Parser
-        , identity
-        , compose
-        , composeR
-        , empty
-        , alternative
-        , map
-        , path
-        , query
-        , hash
-        , parse
-        )
+module ParserPrinter.Parser exposing
+    ( Parser, parse
+    , identity, compose
+    , empty, alternative
+    , map
+    , path, query
+    , composeR, hash
+    )
 
 {-|
 
+
 # Parser
+
 @docs Parser, parse
 
+
 # Category
+
 @docs identity, compose
 
+
 # Alternative
+
 @docs empty, alternative
 
+
 # Iso Functor
+
 @docs map
 
+
 # Url
+
 @docs path, query
 
 -}
@@ -35,6 +39,7 @@ module ParserPrinter.Parser
 import Dict
 import Iso exposing (Iso, apply)
 import UrlSegment exposing (Segment)
+
 
 
 -- PARSER
@@ -64,7 +69,7 @@ compose (Parser p) (Parser q) =
     Parser <|
         \state ->
             List.concatMap
-                (\( pf, state ) -> List.map (\( qf, state ) -> ( qf >> Maybe.andThen pf, state )) (q state))
+                (\( pf, state2 ) -> List.map (\( qf, state3 ) -> ( qf >> Maybe.andThen pf, state3 )) (q state2))
                 (p state)
 
 
@@ -77,7 +82,7 @@ composeR (Parser p) (Parser q) =
     Parser <|
         \state ->
             List.concatMap
-                (\( qf, state ) -> List.map (\( pf, state ) -> ( pf >> Maybe.andThen qf, state )) (p state))
+                (\( qf, state2 ) -> List.map (\( pf, state3 ) -> ( pf >> Maybe.andThen qf, state3 )) (p state2))
                 (q state)
 
 
@@ -103,7 +108,7 @@ map : Iso a b -> Parser r a -> Parser r b
 map iso (Parser p) =
     Parser <|
         \state ->
-            p state |> List.map (\( pf, state ) -> ( pf >> Maybe.andThen (apply iso), state ))
+            p state |> List.map (\( pf, state2 ) -> ( pf >> Maybe.andThen (apply iso), state2 ))
 
 
 
@@ -119,7 +124,7 @@ path =
                     []
 
                 next :: rest ->
-                    [ ( (,) next >> Just, { segment | path = rest } ) ]
+                    [ ( (\b -> ( next, b )) >> Just, { segment | path = rest } ) ]
 
 
 query : String -> Parser a ( List String, a )
@@ -130,14 +135,14 @@ query key =
                 values =
                     Maybe.withDefault [] <| Dict.get key segment.query
             in
-                [ ( (,) values >> Just, segment ) ]
+            [ ( (\b -> ( values, b )) >> Just, segment ) ]
 
 
 hash : Parser a ( Maybe String, a )
 hash =
     Parser <|
         \segment ->
-            [ ( (,) segment.hash >> Just, segment ) ]
+            [ ( (\b -> ( segment.hash, b )) >> Just, segment ) ]
 
 
 
@@ -148,5 +153,5 @@ parse : Parser () a -> Segment -> Maybe a
 parse (Parser p) seg =
     p seg
         |> List.filter (Tuple.second >> .path >> List.isEmpty)
-        |> List.filterMap (Tuple.first >> \f -> f ())
+        |> List.filterMap (Tuple.first >> (\f -> f ()))
         |> List.head
